@@ -1,0 +1,6 @@
+{
+  "name": "browser-cowork",
+  "private": true,
+  "type": "module",
+  "description": "Tells Node that lib/*.js is ESM so the tests can import the panel's modules directly. Chrome ignores this file; the extension's scripts are loaded from sidepanel.html and manifest.json."
+}

@@ -1,0 +1,11 @@
+node_modules/
+*.log
+
+# Secrets. The backend reads the API key from server/.env and generates
+# server/.token; neither may ever be committed, and neither is needed to run
+# the project — .env.example shows the shape.
+server/.env
+server/.token
+
+.DS_Store
+Thumbs.db

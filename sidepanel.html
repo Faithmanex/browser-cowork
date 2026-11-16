@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Cowork</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="tab-info">
+        <span class="dot" id="dot"></span>
+        <div class="titles">
+          <div class="tab-title" id="tabTitle">Not connected</div>
+          <div class="tab-url" id="tabUrl">No tab connected</div>
+        </div>
+      </div>
+      <div class="bar-actions">
+        <button class="icon" id="btnStop" title="Stop the agent" disabled>&#9632;</button>
+        <button class="icon" id="btnSettings" title="Settings">&#9881;</button>
+      </div>
+    </header>
+
+    <div class="connect-bar">
+      <button class="connect" id="btnConnect">Connect this tab</button>
+      <button class="disconnect hidden" id="btnDisconnect">Disconnect</button>
+      <span class="conn-note" id="connNote"></span>
+    </div>
+
+    <main class="feed" id="feed">
+      <div class="empty" id="empty">
+        <div class="empty-icon">&#10022;</div>
+        <h1>Connect a tab to begin</h1>
+        <p>
+          Press <strong>Connect this tab</strong>, then ask a question or give an instruction. The tab
+          stays connected while you switch tabs, so a command cannot land on the wrong page.
+        </p>
+        <div class="chips">
+          <button class="chip" data-prompt="Summarize this page and tell me what I can do here.">
+            Summarize this page
+          </button>
+          <button class="chip" data-prompt="Find the search box, search for 'test', and tell me how many results came back.">
+            Use the search box
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <section class="settings hidden" id="settings">
+      <label>
+        <span>Backend URL</span>
+        <input type="text" id="backendUrl" spellcheck="false" />
+      </label>
+
+      <label>
+        <span>Pairing token</span>
+        <input type="password" id="token" placeholder="Printed when the server starts" autocomplete="off" spellcheck="false" />
+      </label>
+
+      <div class="row">
+        <button class="mini wide" id="btnTest">Test connection</button>
+      </div>
+      <p class="hint" id="statusLine">Not checked yet.</p>
+
+      <label>
+        <span>Blocked sites &mdash; readable, but no clicking or typing</span>
+        <textarea id="blockedHosts" rows="3" spellcheck="false" placeholder="e.g. mybank.com. Leave empty for none."></textarea>
+      </label>
+
+      <label class="toggle">
+        <input type="checkbox" id="requireApproval" />
+        <span>Ask before consequential actions (send, buy, delete, submit…)</span>
+      </label>
+
+      <p class="hint">
+        The model key lives in <code>server/.env</code> on this machine, never in the extension.
+        Consequential actions pause for your approval first; password and card fields are never
+        read or filled.
+      </p>
+    </section>
+
+    <footer class="composer">
+      <textarea id="input" rows="1" placeholder="Connect a tab, then ask or instruct…"></textarea>
+      <button class="send" id="send" title="Send">&#8593;</button>
+    </footer>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

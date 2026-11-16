@@ -1,0 +1,14 @@
+{
+  "name": "browser-cowork-server",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Local agent backend for Browser Cowork. Holds the model credentials; the extension executes actions.",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
