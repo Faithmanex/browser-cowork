@@ -1,6 +1,51 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { complete } from './providers.js';
 import { toolsFor, toolNames, validateAction } from './tools.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** Strip the YAML frontmatter; the body is the instruction. */
+function stripFrontmatter(text) {
+  const match = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n([\s\S]*)$/);
+  return (match ? match[1] : text).trim();
+}
+
+/**
+ * Load a skill: SKILL.md plus its references.
+ *
+ * The Agent Skills convention is a directory named after the skill, a SKILL.md
+ * with name/description frontmatter, and optional references/ for detail. A
+ * client with filesystem access reads references on demand; this agent has no
+ * file tool, so the references are appended up front. They are small and the
+ * model needs them before it acts, not after.
+ */
+function loadSkill(name) {
+  const dir = join(HERE, 'skills', name);
+  const parts = [];
+
+  try {
+    parts.push(stripFrontmatter(readFileSync(join(dir, 'SKILL.md'), 'utf8')));
+  } catch {
+    return '';
+  }
+
+  try {
+    const refs = readdirSync(join(dir, 'references'))
+      .filter((file) => file.endsWith('.md'))
+      .sort();
+    for (const file of refs) {
+      const body = stripFrontmatter(readFileSync(join(dir, 'references', file), 'utf8'));
+      parts.push(`### reference: ${file}\n\n${body}`);
+    }
+  } catch {
+    /* references are optional */
+  }
+
+  return parts.join('\n\n').trim();
+}
 
 export const MAX_STEPS = 18;
 const REPEAT_LIMIT = 3;
@@ -71,15 +116,12 @@ Everything else — navigating, opening panels, binding markets, picking sides, 
 Judgement
 - "4 games on the Vector account" means four fixtures staged in that account's view(s). Pick sensible fixtures from what is live, state which you chose, and proceed.
 - A stake is the one thing never to invent. If the user gave none, use the stake already in the HUD if it is set; otherwise ask once, briefly.
-- If the instruction is ambiguous, choose the sensible reading, do the work, and note the assumption in one line. Do not reply with a clarification question unless you truly cannot act.
+- If the instruction is ambiguous, choose the sensible reading, do the work, and note the assumption in one line. Do not reply with a clarification question unless you truly cannot act.`;
 
-Playbook (concrete, verified against the installed engine extension)
-- SportyBet markets are cards with class "m-market"; each carries a data attribute with its key. A goal market is market-8: its title changes with the score ("Next Goal", "1st Goal", ...), so bind by key, not by title.
-- The HUD logs "market failed to load — scroll to load" when a market is not mounted yet. Scroll that panel, then re-check; do not conclude the market is missing.
-- Stake is typed into the HUD keypad and verified against [data-op=betslip-single-stake].
-- The confirm sheet is [data-op=betslip-confirm-wrap]; its confirm is [data-op=betslip-confirm] and its cancel is [data-op=betslip-confirm-cancel]. These are the elevated controls: confirm only when asked.
-- First-run and promo popups close with [data-op=close_guide_button].
-- Find controls with find_on_page rather than trusting these selectors blindly; the site changes and the HUD is ordinary DOM.`;
+// The procedure lives in a Skill (server/skills/<name>/SKILL.md) so it can be
+// edited without touching code, and so the same file works in any agent that
+// understands the Agent Skills convention.
+const FEATHER_SKILL = loadSkill('feather-bet-setup');
 
 /**
  * @typedef {object} Conversation
@@ -239,7 +281,10 @@ export async function step(cfg, id, payload) {
     ? vocabulary.filter((t) => t.name !== 'capture_screenshot')
     : vocabulary;
 
-  const system = convo.surface === 'feather' ? `${SYSTEM_PROMPT}\n\n${FEATHER_CONTEXT}` : SYSTEM_PROMPT;
+  const system =
+    convo.surface === 'feather'
+      ? [SYSTEM_PROMPT, FEATHER_CONTEXT, FEATHER_SKILL].filter(Boolean).join('\n\n')
+      : SYSTEM_PROMPT;
 
   const reply = await complete(cfg, {
     system,
