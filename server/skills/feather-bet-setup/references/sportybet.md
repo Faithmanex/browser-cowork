@@ -6,55 +6,74 @@ DOM change are separate events.
 
 ## Getting to a fixture
 
-From the home page: Football → Live (or a specific league) → a match row. The
-match page lists markets as cards. Only a handful of cards are mounted at a
-time; the rest mount as the page scrolls, which is why a market can appear
-missing until you scroll that panel.
+Home → Football → Live (or a league) → a match row. Match pages list markets as
+cards. Only a few cards are mounted at a time; the rest mount as the page
+scrolls, which is why a market can look missing until you scroll that panel.
 
-Match headers and market titles are live and change while you watch: a score
-update rewrites the goal market's title. Identify a market by its key attribute,
-not its text.
+Live headers, scores and market titles change while you watch. Identify a market
+by its key attribute, never by its text.
+
+## Page anatomy
+
+| Thing | Selector |
+|---|---|
+| market card | `.m-market` (carries the market key) |
+| market title | `.m-market-title .text` |
+| outcome row | `.m-outcome` |
+| odds | `.m-odds-value` |
+| betslip open / count | `button.beticon-inner`, `[data-op=betslip-icon]`, counts under `.betslip-theme-icon__count` |
+| betslip rows | `.m-betslips .m-outcomes-row`, `.m-item` |
+| single stake | `[data-op=betslip-single-stake]` |
+| slip total / win | `[data-op=betslip-stake-amount]`, `[data-op=betslip-win-amount]` |
+| balance (slip open) | `[data-op=betslip-multi-balance]` |
+| confirm sheet | `[data-op=betslip-confirm-wrap]` → `[data-op=betslip-confirm]` / `[data-op=betslip-confirm-cancel]` |
+| first-run guide | `[data-op=close_guide_button]` |
+
+Selectors drift. Treat this table as a starting point and confirm with
+`find_on_page`.
 
 ## Markets
 
-Each market is a card with class `m-market` and a data attribute holding its
-key. The goal market is `market-8`. Outcomes inside a card are clickable rows
-with the selection and its odds; clicking one adds it to the betslip.
+Each card has a key attribute. The goal market is `market-8`; its title moves
+through "Next Goal" → "1st Goal" → "2nd Goal" as the score changes. A market
+that has not mounted yet logs "market failed to load — scroll to load" — that is
+a mounting problem, not a missing market.
 
 ## The betslip
 
-A single bet has one selection and one stake. Two selections make it a
-multi-bet, which is almost never intended here — clear stale picks first.
+One selection is a single; two make a multi-bet, which is almost never intended
+here. Clear stale picks before binding.
 
-- Stake input: `[data-op=betslip-single-stake]`.
-- Balance when a slip is open: `[data-op=betslip-multi-balance]`.
-- Stake is entered on the site's own keypad: `Clear`, digits, `Done`. Typing
-  into an input with `type_text` often does not update the app's state; use the
-  keypad, or `set_range`/`type_text` only after checking the field accepts it.
-- Minimum stake is 10 NGN. A request below that is rejected or silently raised.
+- Stake goes in on the site's keypad: `Clear`, digits, `Done`. Typing into an
+  input with `type_text` often fails to update the app's state.
+- Minimum stake is 10 NGN; a smaller request is rejected or silently raised.
+- Balance is not shown on the match page — read it from the open slip.
 
-## Placing and confirming
+## Placing, confirming, cashing out
 
-- **Place Bet** submits the slip and opens the Confirm to Pay sheet.
-- The sheet is `[data-op=betslip-confirm-wrap]`; confirm is
-  `[data-op=betslip-confirm]`, cancel is `[data-op=betslip-confirm-cancel]`.
-- Confirmation returns a success sheet naming the bet; that is the evidence a
-  bet was actually placed. A click on Place Bet is not evidence.
+- **Place Bet** submits and opens Confirm to Pay.
+- Confirm is `[data-op=betslip-confirm]`; cancel is
+  `[data-op=betslip-confirm-cancel]`.
+- A success sheet naming the bet is the evidence a bet exists. A click on Place
+  Bet is not evidence.
+- **Cash out** is a separate control on an open bet; it is money-moving too.
 
-Both buttons live on the same page as ordinary DOM, so a labelled
-`click_element` reaches them; the panel will ask the user before such a click.
+Both buttons are ordinary DOM, so labelled `click_element` reaches them, and the
+panel asks the user first.
 
 ## Popups
 
-- First-run guide: `[data-op=close_guide_button]`.
-- Promo sheets (Sporty Survivor and similar) appear over the page and block
-  reading. Close them before surveying.
+First-run guide: `[data-op=close_guide_button]`. Promo sheets (Sporty Survivor
+and similar) cover the page and block reading; close them before surveying.
 
-## Reading state reliably
+## Reading state
 
-The site renders balances, scores and odds asynchronously. After any action,
-take a fresh observation rather than assuming the previous values; the
-observation's diff is designed for exactly this.
+Balances, scores and odds render asynchronously. After any action take a fresh
+observation instead of trusting the previous values — that is what the diff
+format is for.
 
-If the page says a market failed to load, that is a mounting problem, not a
-missing market: scroll, then look again.
+## Other features
+
+The engine extension also hides booking banners (`booking-hide.js`) and can poll
+SportyBet's own score (`.m-score`) as a goal signal. Neither changes how you
+operate the page.

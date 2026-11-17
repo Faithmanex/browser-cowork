@@ -9,7 +9,6 @@
 
 import { observation as buildObservation } from './lib/observe.js';
 
-const MAX_STEPS = 24;
 const SETTLE_MS = 220;
 
 const DEFAULTS = {
@@ -334,7 +333,7 @@ async function runTask(message) {
     });
     state.conversationId = reply.conversationId;
 
-    for (let step = 0; step < MAX_STEPS; step++) {
+    for (;;) {
       if (stopRequested()) break;
 
       if (reply.text) addMsg('assistant', reply.text);

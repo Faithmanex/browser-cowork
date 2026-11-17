@@ -4,7 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MAX_STEPS, createConversation, describe, dropConversation, say, step } from './agent.js';
+import { createConversation, describe, dropConversation, say, step } from './agent.js';
+import { readSkill } from './skills.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_LIMIT = 2 * 1024 * 1024;
 
@@ -97,8 +98,8 @@ if (!preset) {
 }
 
 // Thinking mode is on by default and defaults to effort "high". That buys
-// reasoning we do not need for "click e12", and it costs latency on every one
-// of up to 18 steps, so it is off unless asked for.
+// reasoning we do not need for "click e12", and it costs latency on every step,
+// so it is off unless asked for.
 const thinking = (env.THINKING || 'disabled').toLowerCase();
 const effort = (env.REASONING_EFFORT || 'low').toLowerCase();
 
@@ -256,7 +257,7 @@ const ROUTES = {
       thinking: config.thinking,
       hasKey: Boolean(config.apiKey),
       keySource: config.apiKey ? config.keySource : null,
-      maxSteps: MAX_STEPS,
+      maxSteps: null,
       ...describe(),
     });
   },
@@ -282,6 +283,13 @@ const ROUTES = {
       image: readImage(body),
     });
     send(req, res, 200, result);
+  },
+
+  // Skill content lives on the server; the panel asks for it when the model
+  // calls use_skill / read_skill. Only listed files are readable.
+  'POST /api/skill': async (req, res, body) => {
+    const result = readSkill(String(body.name || ''), String(body.file || ''));
+    send(req, res, result.ok ? 200 : 404, result);
   },
 
   'POST /api/step': async (req, res, body) => {

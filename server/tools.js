@@ -263,6 +263,47 @@ export const APP_TOOLS = [
     },
   },
   {
+    name: 'use_skill',
+    description:
+      "Load a skill's instructions by name. Call this before working in an area a skill covers — for example before setting up games in Feather.",
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Skill name from the available list, e.g. feather-bet-setup' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'read_skill',
+    description:
+      "Read one reference file of a skill after loading it, for example references/hud.md. Ask for a file the skill lists; it will tell you which exist.",
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Skill name' },
+        file: { type: 'string', description: 'e.g. references/app.md' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'set_setting',
+    description:
+      'Change a workspace setting, for example turning off sync scroll so scrolling one panel stops moving all of them. Returns the settings after the change. Keys: syncScroll, directBet, autoLogin, autoRebet (booleans); maxStake, minStake, resetIntervalMs (numbers).',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'syncScroll | directBet | autoLogin | autoRebet | maxStake | minStake | resetIntervalMs',
+        },
+        value: { description: 'Boolean for toggles (true/false), number for stakes and intervals.' },
+      },
+      required: ['key', 'value'],
+    },
+  },
+  {
     name: 'survey_panels',
     description:
       'Compact summary of every open view: id, label, URL, title and its first few elements. Use this to compare tabs without reading each one in full.',
@@ -383,6 +424,35 @@ export function validateAction(name, rawArgs, allowed) {
         return { ok: false, error: 'set_zoom needs a positive factor, or fit:true.' };
       }
       args.factor = Math.min(3, Math.max(0.25, factor));
+    }
+  }
+
+  if (name === 'use_skill' || name === 'read_skill') {
+    const skillName = String(args.name || '');
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(skillName)) {
+      return { ok: false, error: 'use_skill needs a skill name, e.g. feather-bet-setup.' };
+    }
+    if (name === 'read_skill' && args.file !== undefined && !/^references\/[a-z0-9-]+\.md$/.test(String(args.file))) {
+      return { ok: false, error: 'read_skill file must look like references/app.md.' };
+    }
+  }
+
+  if (name === 'set_setting') {
+    const keys = new Set([
+      'syncScroll',
+      'directBet',
+      'autoLogin',
+      'autoRebet',
+      'maxStake',
+      'minStake',
+      'rebetEnabled',
+      'resetIntervalMs',
+    ]);
+    if (!keys.has(String(args.key))) {
+      return { ok: false, error: `set_setting key must be one of: ${[...keys].join(', ')}.` };
+    }
+    if (typeof args.value !== 'boolean' && !Number.isFinite(Number(args.value))) {
+      return { ok: false, error: 'set_setting value must be a boolean or a number.' };
     }
   }
 

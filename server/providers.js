@@ -157,6 +157,11 @@ async function callOpenAI(cfg, { system, events, tools }) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
     body: JSON.stringify(body),
+  }).catch((err) => {
+    // A connect timeout surfaces as "fetch failed", which tells the user
+    // nothing. Say which provider and what happened.
+    const cause = err?.cause?.code || err?.message || 'network error';
+    throw new Error(`Could not reach ${cfg.provider}'s API (${cause}). Check the network and try again.`);
   });
 
   const data = await res.json().catch(() => ({}));

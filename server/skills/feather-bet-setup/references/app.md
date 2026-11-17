@@ -2,67 +2,102 @@
 
 ## Purpose
 
-Feather (window title "Sportly Multiview") exists so one person can watch and
-prepare the same football fixtures across several betting accounts at once,
-without switching browsers, logging in and out, or losing a tab. It is a
-workspace, not a general-purpose browser: it opens a fixed set of account views,
-keeps each login isolated, and puts a betting HUD on every SportyBet panel.
+"Sportly Multiview" exists so one person can watch and prepare the same fixtures
+across several betting accounts at once without switching browsers or logging in
+and out. It is a workspace, not a general browser: a fixed set of account views,
+each with its own profile, plus a HUD on every SportyBet panel.
 
-Typical use: four SportyBet accounts plus a Betano view, all pointed at the same
-match, so a goal on Betano can be acted on in each SportyBet slip at the same
-moment.
+Canonical use: four SportyBet accounts and a Betano view on the same match, so a
+goal seen on Betano can be acted on in each slip within a second.
 
-## Accounts and panels
+## Accounts
 
-- An **account** is a saved profile: label, optional phone/password, and a site
-  (`sportybet`, `betano`, `football`). Accounts live in a local SQLite store and
-  are listed on the `ACCOUNTS:` line of every full observation.
-- A **panel** is one WebView2 view with its own profile directory and therefore
-  its own cookies and login. `PANELS:` lists the open ones with their ids.
-- Panels are not tabs in the browser sense: they are independent views, all
-  visible at once in a grid. There is no active-tab concept to switch, only
-  focus.
-- Ad-hoc panels (opened from a URL rather than an account) have negative ids and
-  their own profile, and do not load the betting extension.
+An account is a row in the local SQLite store: label, optional phone and
+password (DPAPI-encrypted), site (`sportybet`, `betano`, `football`), optional
+start URL, enabled flag. They appear on the `ACCOUNTS:` line.
 
-## The control deck
+- One account can have one panel at a time; reopening an account reuses its
+  profile and therefore its login.
+- Profiles live under `feather_profile/sportly/profiles/acct_<id>`, so cookies,
+  localStorage and logins are isolated per account.
+- The agent can list accounts and open one by id. It cannot create, edit or
+  delete accounts, and must never handle credentials.
 
-The top strip is a WebView2 page with the shared controls: a URL field with Go
-and Apply all, Reload all, Sync scroll (scrolls every panel together), Direct
-bet, Staged, Fill all, Place all, Cash out, Max/Min stake, Clear interval, Auto
-clear, Auto rebet, Auto login, + Account, and Open all accounts. The balance
-readout belongs to the focused SportyBet account.
+## Panels
 
-The left sidebar has three tabs — Panels, Accounts, Live — and a row per panel
-with Focus, URL, Fill, Place, Cash out, Reload and Close.
+A panel is one WebView2 view. Ids are integers, ascending; ad-hoc panels opened
+from a URL use negative ids and have no account and no extension.
 
-None of this is required to operate panels: the agent has its own tools
-(`open_panel`, `focus_panel`, `close_panel`, `reorder_panel`, `reload_panel`,
-`navigate`, `set_zoom`) and should use those rather than clicking the deck.
+- `PANELS:` lists open panels with label, site and focus mark.
+- Panels are not tabs: all are visible in a grid and only one has focus.
+- Adding or removing a panel re-flows the layout of every panel.
+
+## The control deck (top strip)
+
+A WebView2 page across the top, and a sidebar on the left. The agent does not
+need to click it — every action has a tool — but it should understand what the
+user means when they name a control.
+
+**Top strip**
+
+| Control | Meaning |
+|---|---|
+| URL field + **Go** | navigate the focused panel to that URL (Enter also works) |
+| **Apply all** | open that URL in every panel |
+| **Reload all** | reload every panel |
+| **Sync scroll** | when on, scrolling one panel scrolls all of them |
+| **Direct bet** / **Staged** | placing mode: one-click direct, or place-then-confirm |
+| **Fill all** / **Place all** | fill the slip on every panel / place on every panel (money) |
+| **Cash out** | cash out the focused panel's open bet (money) |
+| **Max stake / Min stake** | caps pushed to every HUD (0 = the HUD's own value wins) |
+| **Clear interval** | delay used by the reset/clear sequence (ms) |
+| **Auto clear / Auto rebet / Auto login** | automatic behaviours (auto-rebet moves money) |
+| **+ Account** | open the account editor |
+| **Open all accounts** | open a panel for every enabled account |
+| Balance readout | the focused SportyBet account's balance |
+
+**Sidebar (Panels / Accounts / Live)**
+
+Panels tab lists every panel with Focus, URL, Fill, Place, Cash out, Reload,
+Close, and up/down reordering. Accounts tab edits accounts. Live tab shows the
+shared live feed.
+
+## App commands (what the deck sends)
+
+`apply_url`, `apply_url_all`, `navigate_panel`, `reload_all`, `reload_panel`,
+`open_all`, `open_panel` (account or URL), `close_panel`, `close_all`,
+`focus_panel`, `move_panel`, `reorder_panel`, `fill_all`, `fill_panel`,
+`fill_login`, `fill_slip`, `place_all`, `place_bet`, `cashout`, `reset_slip`,
+`save_account`, `delete_account`, `set_setting`, `focus_accounts`, `toggle_agent`.
+
+The agent's equivalents are in `references/tools.md`. The money-moving ones
+(`place_*`, `cashout`) are elevated and are not part of the agent's vocabulary.
 
 ## Arranging views
 
-- `focus_panel` changes the view the user is looking at; it does not change what
-  the agent can reach.
-- `reorder_panel {panelId, beforePanelId}` moves a view in the strip. Use it when
-  the user asks for two panels side by side or in a particular order.
-- The grid is automatic (1 → 1x1, 2 → 2x1, 3 → 3x1, 4 → 2x2, 5–6 → 3x2,
-  7–8 → 4x2, more → roughly square). Adding a panel re-flows every panel.
-- `set_zoom` exists because re-flowing makes panels narrow. A factor of 0.7–0.8
-  usually recovers a usable layout; the result reports the CSS width achieved.
+- Grid: 1 → 1×1, 2 → 2×1, 3 → 3×1, 4 → 2×2, 5–6 → 3×2, 7–8 → 4×2, more →
+  roughly square.
+- `focus_panel` changes what the user sees, not what the agent can reach.
+- `reorder_panel {panelId, beforePanelId}` moves a view; use it to put two
+  related panels side by side.
+- `set_zoom` shrinks or grows a page inside its cell. Fit is clamped 0.5–1.5 and
+  reports the CSS width it achieved; prefer an explicit factor on a busy layout.
 
-## What the agent may change
+## Deck settings
 
-Open and close views, navigate them, arrange and zoom them, and read them. It
-does not manage accounts (no creating, editing or deleting credentials) and does
-not change the deck's global settings. Account credentials are the user's.
+`set_setting {key, value}` persists to the same store and re-applies to every
+panel immediately. Keys: `syncScroll`, `directBet`, `autoLogin`, `autoRebet`,
+`maxStake`, `minStake`, `rebetEnabled`, `resetIntervalMs`.
 
-## Failure modes to expect
+Sync scroll is the one that bites: with it on, `scroll_page` on one panel moves
+all nine.
 
-- A panel opened for the first time may show `about:blank` briefly, then recover.
-- Auto login runs a few seconds after a panel loads; typing into a login form
-  before it finishes will fight it.
-- Closing a panel and reopening the same account reuses the same profile, so the
-  login persists.
-- Nothing works if the local backend is not running: the dock will say the
-  backend is unreachable rather than silently doing nothing.
+## Failure modes
+
+- A new panel may show `about:blank` briefly, then recover.
+- Auto login fires a few seconds after load; typing into the login form before
+  that fights it.
+- Closing and reopening an account keeps the login (same profile).
+- Nothing works if the backend is down; the dock reports it rather than hanging.
+- A panel whose view is `about:blank` or an error page has no page agent;
+  `navigate` it somewhere real first.

@@ -1,53 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { complete } from './providers.js';
+import { skillIndex } from './skills.js';
 import { toolsFor, toolNames, validateAction } from './tools.js';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-/** Strip the YAML frontmatter; the body is the instruction. */
-function stripFrontmatter(text) {
-  const match = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n([\s\S]*)$/);
-  return (match ? match[1] : text).trim();
-}
-
-/**
- * Load a skill: SKILL.md plus its references.
- *
- * The Agent Skills convention is a directory named after the skill, a SKILL.md
- * with name/description frontmatter, and optional references/ for detail. A
- * client with filesystem access reads references on demand; this agent has no
- * file tool, so the references are appended up front. They are small and the
- * model needs them before it acts, not after.
- */
-function loadSkill(name) {
-  const dir = join(HERE, 'skills', name);
-  const parts = [];
-
-  try {
-    parts.push(stripFrontmatter(readFileSync(join(dir, 'SKILL.md'), 'utf8')));
-  } catch {
-    return '';
-  }
-
-  try {
-    const refs = readdirSync(join(dir, 'references'))
-      .filter((file) => file.endsWith('.md'))
-      .sort();
-    for (const file of refs) {
-      const body = stripFrontmatter(readFileSync(join(dir, 'references', file), 'utf8'));
-      parts.push(`### reference: ${file}\n\n${body}`);
-    }
-  } catch {
-    /* references are optional */
-  }
-
-  return parts.join('\n\n').trim();
-}
-
-export const MAX_STEPS = 18;
+// No step cap. A run ends when the model finishes, the user stops it, or the
+// same action is proposed three times in a row (REPEAT_LIMIT) — those are the
+// guards that actually match what can go wrong, and none of them cuts a long
+// legitimate task in half.
 const REPEAT_LIMIT = 3;
 const MAX_INVALID_RETRIES = 2;
 const MAX_CONVERSATIONS = 20;
@@ -118,10 +77,10 @@ Judgement
 - A stake is the one thing never to invent. If the user gave none, use the stake already in the HUD if it is set; otherwise ask once, briefly.
 - If the instruction is ambiguous, choose the sensible reading, do the work, and note the assumption in one line. Do not reply with a clarification question unless you truly cannot act.`;
 
-// The procedure lives in a Skill (server/skills/<name>/SKILL.md) so it can be
-// edited without touching code, and so the same file works in any agent that
-// understands the Agent Skills convention.
-const FEATHER_SKILL = loadSkill('feather-bet-setup');
+// What skills exist, advertised by name and description only. The body is
+// fetched with use_skill when the model decides it needs it, and references on
+// demand after that — the progressive disclosure part of the format.
+const SKILL_INDEX = skillIndex();
 
 /**
  * @typedef {object} Conversation
@@ -229,7 +188,7 @@ export async function say(cfg, id, payload) {
 export const describe = () => ({
   tools: toolNames('chrome'),
   featherTools: toolNames('feather'),
-  maxSteps: MAX_STEPS,
+  maxSteps: null,
   conversations: conversations.size,
 });
 
@@ -283,7 +242,7 @@ export async function step(cfg, id, payload) {
 
   const system =
     convo.surface === 'feather'
-      ? [SYSTEM_PROMPT, FEATHER_CONTEXT, FEATHER_SKILL].filter(Boolean).join('\n\n')
+      ? [SYSTEM_PROMPT, FEATHER_CONTEXT, SKILL_INDEX].filter(Boolean).join('\n\n')
       : SYSTEM_PROMPT;
 
   const reply = await complete(cfg, {
@@ -388,18 +347,6 @@ export async function step(cfg, id, payload) {
     };
   }
 
-  if (convo.steps >= MAX_STEPS) {
-    return {
-      conversationId: id,
-      step: convo.steps,
-      text: reply.text,
-      action,
-      done: true,
-      reason: 'step_limit',
-      notice: `Stopped after ${MAX_STEPS} steps. Ask again to continue.`,
-    };
-  }
-
   convo.pendingCallId = callId;
   convo.pendingAction = action.name;
 
@@ -409,6 +356,5 @@ export async function step(cfg, id, payload) {
     text: reply.text,
     action,
     done: false,
-    remaining: MAX_STEPS - convo.steps,
   };
 }

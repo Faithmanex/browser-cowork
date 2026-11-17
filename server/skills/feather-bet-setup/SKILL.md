@@ -1,54 +1,57 @@
 ---
 name: feather-bet-setup
-description: Sets up football bets in Feather (Sportly Multiview): opens fixtures across logged-in accounts, binds a market on the SportyBet HUD, picks a side and enters a stake, stopping before Place Bet. Use when the user asks to set up, stage, prepare or arrange games, matches, tabs, slips or accounts in Feather.
+description: Operates Feather (Sportly Multiview): the workspace, its panels and accounts, the SB Fast Bet HUD on SportyBet, and the SportyBet/Betano sites. Covers setting up games, arranging views, reading observations, every agent tool, and troubleshooting. Use for any request to set up, stage, prepare, arrange, inspect or debug games, matches, tabs, slips or accounts in Feather.
 ---
 
-# Setting up games in Feather
+# Feather: operating manual
 
-Feather is a Windows browser built for preparing football bets across several
-logged-in accounts at once: one WebView2 panel per account, side by side, with a
-betting HUD injected into each SportyBet panel. "Setting up a game" means making
-its slip ready without placing it.
+Feather is a Windows browser for preparing football bets across several
+logged-in accounts at once. One WebView2 panel per account, all visible, with a
+betting HUD injected into every SportyBet panel. The agent works the panels and
+the app itself; the user keeps the final say on money.
 
-Read the reference that matches the question:
+## Load the reference you need
 
-- `references/app.md` — the application: panels, accounts, the control deck,
-  arranging views, zoom, and what the agent can do to the app itself.
-- `references/hud.md` — the SB Fast Bet extension: the HUD, its three stages,
-  hotkeys, toggles, auto-rebet, and the goal bridges.
-- `references/sportybet.md` — the SportyBet mobile site: match pages, market
-  cards, the betslip, the stake keypad and the Confirm to Pay sheet.
-- `references/betano.md` — Betano and the goal relay into SportyBet.
+`read_skill` takes one file name and returns its text. Load it before working in
+that area rather than guessing:
 
-## The four steps
+| File | Covers |
+|---|---|
+| `references/app.md` | panels, accounts, the control deck, every app command, arranging, zoom, deck settings |
+| `references/hud.md` | SB Fast Bet: fields, three stages, hotkeys, toggles, config defaults, bridges |
+| `references/sportybet.md` | the mobile site: navigation, markets, betslip, keypad, confirm, cashout |
+| `references/betano.md` | the watching side and the goal relay |
+| `references/tools.md` | every tool, its arguments and returns, and when to use it |
+| `references/observations.md` | how to read an observation: PANEL/ACCOUNTS/SETTINGS lines, refs, diffs, coordinates |
+| `references/troubleshooting.md` | symptoms and fixes: backend down, provider timeout, blank panel, market not loading |
 
-1. **Find the fixture.** `survey_panels` for an overview, `read_panel` for detail.
-   Never assume what a panel is showing.
-2. **Bind the market.** In the HUD, bind by key. The goal market is `market-8`;
-   its title changes with the score, so a title is not an identifier.
-3. **Pick the side.** Home or Away in the HUD, for the bound market.
-4. **Enter the stake.** Through the HUD keypad, then verify against
+## The job: set up a game
+
+1. **Find the fixture** — `survey_panels`, then `read_panel`. Never assume.
+2. **Bind the market** — by key (`market-8` is the goal market; its title moves
+   with the score). Scroll the card into view first and verify the Bound readout.
+3. **Pick the side** — Home or Away for the bound market.
+4. **Enter the stake** — through the site keypad, verify against
    `[data-op=betslip-single-stake]`.
 
-Stop there. The slip is set up. Do not press Place Bet or confirm the sheet
-unless the user asked for a bet in this or an earlier message.
+The slip is then set up. Do not press Place Bet or confirm the sheet unless the
+user asked for a bet in this or an earlier message.
 
 ## Elevated actions
 
-Only when the user asked: pressing Place Bet, confirming in the Confirm to Pay
-sheet, or changing a panel's auto-place / auto-rebet toggles. Everything else —
-navigating, opening panels, binding markets, choosing sides, typing a stake,
-arranging and zooming panels — is ordinary work.
+Place Bet, the Confirm to Pay sheet, and the auto-place / auto-rebet toggles.
+Everything else — navigating, opening panels, binding, choosing sides, typing a
+stake, arranging, zooming, changing deck settings — is ordinary work.
 
-## Rules
+## Standing rules
 
-- A stake is never invented. If none was given, use the stake already in the HUD;
+- A stake is never invented. Use the HUD's current stake if none was given;
   otherwise ask once, briefly.
-- Prefer acting and stating the assumption in one line over asking what the
+- Prefer acting and stating your assumption in one line over asking what the
   instruction means.
-- "The same game on both sites" means pointing the Betano panel at the same
-  fixture the SportyBet panel is showing, so the goal relay lines up.
-- A narrow panel needs `set_zoom` with a factor (0.7–0.8). `fit` asks for an
-  unreadably small zoom when many panels are open.
-- Panels are separate profiles with separate logins. A click in one panel has no
-  effect on another.
+- Sync scroll moves every panel. Turn it off (`set_setting syncScroll false`)
+  before scrolling one panel, and say that you did.
+- A narrow panel needs `set_zoom` with a factor (0.7–0.8); `fit` goes unreadable
+  with many panels open.
+- Panels are separate profiles with separate logins. One panel's click never
+  affects another.
