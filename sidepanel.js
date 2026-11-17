@@ -226,15 +226,22 @@ async function riskOf(name, args) {
     return `Navigate to ${args.url}`;
   }
   if (name === 'type_text' && args.submit) return 'Type and press Enter, which may submit the form.';
-  if (name !== 'click_element') return null;
+
+  // Blind pointer actions — click_at, or a drag with no ref at either end — do
+  // not prompt. There is no element to label there, so every prompt would say
+  // the same unhelpful thing ("I cannot see what is under this point"), and a
+  // prompt that never says anything new is one the user learns to dismiss
+  // unread. The setting itself remains the global switch for everything.
+  const ref = name === 'drag' ? args.from_ref : name === 'click_element' ? args.ref : null;
+  if (!ref) return null;
 
   try {
-    const probe = await rpc('probe', { ref: args.ref });
+    const probe = await rpc('probe', { ref });
     const info = probe?.info;
     if (!info) return null;
     const target = `${info.role} "${info.name}"${info.href ? ` → ${info.href}` : ''}`;
     if (CONSEQUENTIAL.test(info.name) || CONSEQUENTIAL.test(info.href || '')) {
-      return `This looks consequential: ${target}`;
+      return `${name === 'drag' ? 'Dragging this looks consequential' : 'This looks consequential'}: ${target}`;
     }
   } catch {
     /* probe is best-effort */
@@ -261,7 +268,9 @@ async function executeAction(action) {
 
   const card = addToolCard(name, args);
   const call = { ...args };
-  if ('ref' in call) call.observationVersion = state.obsVersion;
+  // Refs can arrive under three names: click/type/hover use `ref`, drag uses
+  // from_ref/to_ref. All of them are checked against the latest observation.
+  if (call.ref || call.from_ref || call.to_ref) call.observationVersion = state.obsVersion;
 
   try {
     const out = await rpc(name, call);
@@ -274,7 +283,13 @@ async function executeAction(action) {
         data: base64,
       };
       card.done('captured');
-      return { ok: true, note: 'Screenshot attached as an image in the next observation.' };
+      const vp = out.viewport;
+      return {
+        ok: true,
+        note: vp
+          ? `Screenshot attached as an image in the next observation. The image is ${vp.dpr}x the ${vp.w}x${vp.h} CSS viewport; pass image pixels to click_at with from_image=true.`
+          : 'Screenshot attached as an image in the next observation.',
+      };
     }
 
     card.done(out.via ? `ok (${out.via})` : out.selected ? `ok "${out.selected}"` : 'ok');

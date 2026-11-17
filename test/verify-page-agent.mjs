@@ -316,6 +316,50 @@ try {
     return rect;
   });
   expect('actionable.movingDetected', moving.moving, true);
+  // --- sliders, frames and the viewport ----------------------------------
+  // A second page, because these widgets are not in lab.html and adding them
+  // there would disturb the coordinate assertions above.
+  const widget = await browser.newPage();
+  await widget.setViewportSize({ width: 1000, height: 800 });
+  await widget.goto(pathToFileURL(join(HERE, 'pages', 'pointer.html')).href);
+  await widget.waitForTimeout(150);
+  await widget.evaluate(readFileSync(join(ROOT, 'lib', 'page-agent.js'), 'utf8'));
+
+  const wsnap = await widget.evaluate(() => globalThis.__bp.snapshot(250, 500));
+
+  const slider = wsnap.elements.find((e) => e.role === 'slider');
+  expect('slider.present', Boolean(slider), true);
+  expect('slider.value', slider?.value, '50');
+  expect('slider.min', slider?.min, '0');
+  expect('slider.max', slider?.max, '100');
+  expect('slider.notTextbox', wsnap.elements.filter((e) => e.role === 'textbox').length, 0);
+
+  const frameEl = wsnap.elements.find((e) => e.role === 'frame');
+  expect('frame.reported', Boolean(frameEl), true);
+  expect('frame.size', [frameEl?.w, frameEl?.h], [300, 150]);
+  expect('frame.centre', [frameEl?.x, frameEl?.y], [170, 545]);
+
+  expect('viewport.width', wsnap.viewportW, 1000);
+  expect('viewport.height', wsnap.viewportH, 800);
+  expect('viewport.dpr', wsnap.dpr >= 1, true);
+
+  const set = await widget.evaluate((ref) => globalThis.__bp.setRange(ref, 80), slider.ref);
+  expect('setRange.ok', set?.ok, true);
+  expect('setRange.value', set?.value, 80);
+  expect('setRange.domValue', await widget.evaluate(() => document.getElementById('range').value), '80');
+  expect(
+    'setRange.firedInputAndChange',
+    await widget.evaluate(() => {
+      const text = document.getElementById('trace').textContent;
+      return text.includes('"target":"range","type":"input"') && text.includes('"target":"range","type":"change"');
+    }),
+    true,
+  );
+
+  const refused = await widget.evaluate((ref) => globalThis.__bp.setRange(ref, 10), frameEl.ref);
+  expect('setRange.refusesNonRange', refused?.ok, false);
+
+  await widget.close().catch(() => {});
 } finally {
   await page.close().catch(() => {});
   await browser.close().catch(() => {});

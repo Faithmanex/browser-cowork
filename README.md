@@ -66,6 +66,43 @@ Ideas borrowed, one from each project that solves part of this:
 | Playwright MCP | `find_on_page`: search the existing snapshot instead of re-reading the page |
 | Nanobrowser | Pre-click actionability: enabled, not moving, not covered by another element |
 | Stagehand | Replaying a known action should not require re-reading the page |
+| OpenAI computer-use | A drag is a path of moves, `move` is its own action, and mouse actions can hold modifiers |
+
+## Pointer, canvas and frames
+
+Refs only exist for DOM controls. Video editors, maps and design tools are canvases, so this build adds
+the coordinate-level tools those need:
+
+| Tool | Use |
+|---|---|
+| `drag` | press → interpolated moves → release, between a ref or a coordinate at each end |
+| `hover` | one pointer move, for tooltips, hover menus and reveal-on-hover controls |
+| `click_at` | click a viewport coordinate; `from_image: true` takes a screenshot pixel and divides by the device pixel ratio |
+| `set_range` | set a native range input (scrubber, zoom, volume) |
+| `scroll_page` | optional `x, y, dx`: the wheel goes to the container under the cursor, so inner panels scroll |
+
+`press_key` now sends chords (`ctrl+z`, `ctrl+shift+z`, `space`) with a real key table, and the
+observation carries a `VIEWPORT: WxH CSS @Nx` line so screenshot pixels and CSS pixels can be related.
+
+Approvals are label-based, so they only interrupt when they can say something useful. A click or drag on
+an element whose name or href looks consequential ("Send", "Delete", "Buy", "Checkout") pauses; working
+on a canvas does not, because there is no label to read and a prompt that says "I cannot see what is
+under this point" every time is a prompt you learn to dismiss unread. Settings → *Ask before
+consequential actions* turns the whole thing off.
+
+The event sequences live in `lib/input.js` as pure functions, and `test/verify-pointer.mjs` replays them
+through a real Chromium CDP session. That is deliberate: the tests exercise exactly the events the
+service worker sends, rather than a Playwright re-implementation of them.
+
+Known limits, stated rather than implied:
+
+- **Frames.** Elements inside an iframe are not listed as refs (the observation only reports the frame,
+  its size and its URL). Coordinate tools still work inside it, because the browser delivers input by
+  hit-testing — verified by clicking a button inside a frame in the test. Dragging *out of* a frame into
+  the parent page is not supported.
+- **Drag path.** A drag is a straight line between two points, sampled 12 times. Canvas apps that need
+  a specific curved path, or a hold before moving, are not covered.
+- **No touch, pen or multi-pointer gestures** — pinch-zoom and two-finger pan are not implemented.
 
 ## Setup
 
@@ -171,7 +208,7 @@ Honest split, because these are not the same kind of "works".
 **Verified — real Chromium, real DOM**
 
 ```powershell
-node test/verify-page-agent.mjs      # 51 assertions, exit 0
+node test/verify-page-agent.mjs      # 67 assertions, exit 0
 ```
 
 Runs `lib/page-agent.js` against `test/pages/lab.html` and checks: versioned observations, element
@@ -201,12 +238,37 @@ diffed by line rather than resent, and the three full-resend triggers (reload, n
 70% of the page). On a 40-element page with body text, one changed element costs **19.3× fewer
 characters** than the full snapshot.
 
+```powershell
+node test/verify-input.mjs           # 15 checks, pure
+node test/verify-pointer.mjs         # 16 checks, real Chromium + CDP
+```
+
+`verify-input` covers the planners: key table (letters, digits, F-keys, aliases), chord parsing with
+no text on Ctrl-shortcuts, shift uppercasing, the press/move/release shape of a drag, monotonic
+waypoints that land exactly on the target, a zero-distance drag collapsing to a short sequence, and
+modifier bits held for the whole drag.
+
+`verify-pointer` is the one that proves drag actually works, by replaying those same event arrays into
+a real browser page:
+
+```
+canvas drag          pointerdown at start, 10 interpolated moves with buttons=1, pointerup at target
+HTML5 drag and drop  real dragstart and drop, carrying dataTransfer "clip-42"
+hover                mouseenter fires
+click at a point     lands on the exact pixel
+shift+click          event.shiftKey is true
+double click         a real dblclick fires (two press/release pairs, clickCount 1 then 2)
+ctrl+z / shift+space modifiers arrive, ctrl+space does not insert text
+click inside frame   a coordinate click reaches a button inside a same-origin iframe
+```
+
 **Verified — live model, no browser**
 
 ```
 node test/deepseek-probe.mjs       model ids, base URL, tools, reasoning, vision
 node test/verify-loop.mjs          /api/turn + /api/step, the panel's own loop
 node test/verify-diff-loop.mjs     the loop with diff observations after step 1
+node test/verify-editor-loop.mjs   a canvas timeline task, answered with drag + coordinates
 node test/verify-image-turn.mjs    a real screenshot through the HTTP path
 ```
 
@@ -238,6 +300,21 @@ Three deliberate actions off a 163-character diff, correct refs, nothing submitt
 calls — the model used refs it had only seen in the first observation, which is exactly the behaviour
 the stable index exists to make possible.
 
+`verify-editor-loop.mjs` checks the canvas path. The page text describes a clip on a timeline and
+there are no elements to click; the harness changes the page's state **only if a drag actually
+happened**, so a model that talks its way out of the task fails instead of being congratulated:
+
+```
+step 1  capture_screenshot          refused: this harness has no screen to capture
+step 2  drag from (120,300) to (420,300)
+        "The clip now spans x=420..580 ... it stayed on Track 1 and kept its duration."
+```
+
+Two behaviours worth noting, both from watching it run: it reaches for a screenshot before acting even
+when coordinates are already in the text, and on another run it grabbed the clip's middle (x=200, the
+centre of 120–280) and moved it +300 — also correct, since translating a clip is not the same as
+trimming it. The test accepts any grab point inside the clip and asserts the displacement.
+
 Gemini still works as an alternative (2.3 s per step, so roughly 2× slower than DeepSeek here).
 
 These tests caught three real bugs, which is the point of running them:
@@ -258,6 +335,10 @@ Earlier, the same loop was verified against Gemini across three round trips.
 - The new refusal path in `background.js` for disabled, moving and covered elements. The page-side
   detection is tested (the rect carries the flag and names the coverer); the branch that turns it into
   an error has never run, because it needs the service worker.
+- The new worker RPCs: `hover`, `drag`, `click_at`, `set_range`, and the point-based `scroll_page`.
+  Their event sequences are tested against a real browser (`verify-pointer`), and the page-side helpers
+  are tested (`verify-page-agent`), but the code that resolves a ref to a point, attaches the debugger
+  and sends those events end-to-end has not run outside the service worker.
 - `chrome.scripting.executeScript` injection specifically. The test injects through Playwright
   (`injectedVia: evaluate`), which proves the page-side logic but not Chrome's isolated-world entry
   point.
@@ -273,6 +354,7 @@ untested third.
 | `manifest.json` | MV3 manifest: `sidePanel`, `debugger`, `scripting`, `tabs`, `storage` |
 | `background.js` | Service worker: guards, actionability checks, CDP input, all tab operations |
 | `lib/page-agent.js` | Injected: stable element refs, versioned observations, `find`, DOM fallbacks |
+| `lib/input.js` | Pure planners: drag path, hover, click, double-click, chords, wheel |
 | `lib/observe.js` | Full-vs-diff observation text, page text delta, resend triggers |
 | `sidepanel.html/.css/.js` | Chat, connection control, approvals, the loop |
 | `server/index.js` | HTTP server, provider table, loopback + token + origin checks |
@@ -281,6 +363,9 @@ untested third.
 | `server/tools.js` | The action schema and its validator |
 | `test/deepseek-probe.mjs` | Live API probe: model ids, base URL, tools, reasoning, vision |
 | `test/verify-observe.mjs` | Full/diff formatting and the resend triggers, pure Node |
+| `test/verify-input.mjs` | Drag path, keys and wheel planning, pure Node |
+| `test/verify-pointer.mjs` | Drag, drop, hover, chords and frame clicks in real Chromium |
 | `test/verify-loop.mjs` | Live end-to-end turn/step against the running server |
 | `test/verify-diff-loop.mjs` | Live loop where steps 2+ are diff observations |
+| `test/verify-editor-loop.mjs` | Live canvas task answered with drag and coordinates |
 | `test/verify-image-turn.mjs` | Live screenshot path through `/api/turn` |

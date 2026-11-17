@@ -4,8 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MAX_STEPS, createConversation, describe, dropConversation, step } from './agent.js';
-
+import { MAX_STEPS, createConversation, describe, dropConversation, say, step } from './agent.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BODY_LIMIT = 2 * 1024 * 1024;
 
@@ -155,11 +154,15 @@ function corsHeaders(req) {
   const origin = req.headers.origin || '';
 
   let allowed = '';
-  if (config.allowOrigin) {
-    // Pinned to one extension ID — the recommended setup.
-    allowed = origin === config.allowOrigin ? origin : '';
+  const pinned = String(config.allowOrigin || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (pinned.includes(origin)) {
+    allowed = origin;
   } else if (/^chrome-extension:\/\/[a-p]{32}$/.test(origin)) {
-    // Not yet pinned: accept any unpacked extension origin on loopback.
+    // Unpacked extension origin. Still gated by the pairing token.
     allowed = origin;
   }
 
@@ -259,8 +262,21 @@ const ROUTES = {
   },
 
   'POST /api/turn': async (req, res, body) => {
-    const conversationId = createConversation();
+    const conversationId = createConversation(body.surface);
     const result = await step(config, conversationId, {
+      message: String(body.message || '').slice(0, 4000),
+      observation: body.observation,
+      image: readImage(body),
+    });
+    send(req, res, 200, result);
+  },
+
+  // Continue the current task with a new instruction. Same conversation, same
+  // history, fresh step budget.
+  'POST /api/message': async (req, res, body) => {
+    const id = String(body.conversationId || '');
+    if (!id) return send(req, res, 400, { error: 'conversationId is required' });
+    const result = await say(config, id, {
       message: String(body.message || '').slice(0, 4000),
       observation: body.observation,
       image: readImage(body),

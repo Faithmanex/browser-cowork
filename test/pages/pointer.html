@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cowork pointer test page</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        font: 13px system-ui, sans-serif;
+        background: #fff;
+      }
+      /* Absolute layout so every coordinate in the test is predictable. */
+      #canvas {
+        position: absolute;
+        left: 20px;
+        top: 20px;
+        border: 1px solid #333;
+        background: #f4f4f4;
+        cursor: crosshair;
+      }
+      #source,
+      #target,
+      #hover,
+      #dbl {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #666;
+        user-select: none;
+      }
+      #source {
+        left: 20px;
+        top: 300px;
+        width: 140px;
+        height: 60px;
+        background: #e8f0ff;
+      }
+      #target {
+        left: 320px;
+        top: 300px;
+        width: 140px;
+        height: 60px;
+        background: #fff8e0;
+      }
+      #hover {
+        left: 20px;
+        top: 400px;
+        width: 240px;
+        height: 40px;
+        background: #f0fff0;
+      }
+      #hover:hover {
+        background: #b6f0b6;
+      }
+      #dbl {
+        left: 320px;
+        top: 400px;
+        width: 140px;
+        height: 40px;
+      }
+      #frame {
+        position: absolute;
+        left: 20px;
+        top: 470px;
+        width: 300px;
+        height: 150px;
+        border: 0;
+        background: #fff;
+      }
+      #range {
+        position: absolute;
+        left: 420px;
+        top: 480px;
+        width: 240px;
+      }
+      #trace {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas" width="400" height="240"></canvas>
+    <div id="source" draggable="true">Drag me</div>
+    <div id="target">Drop here</div>
+    <div id="hover">Hover me</div>
+    <div id="dbl">Double-click me</div>
+    <iframe
+      id="frame"
+      title="Editor frame"
+      srcdoc="<!doctype html><html><head><style>
+        html,body{margin:0;font:13px system-ui;background:#fff}
+        #inner{position:absolute;left:50px;top:50px;width:120px;height:40px}
+        #itrace{display:none}
+      </style></head><body>
+        <button id='inner'>Inner button</button>
+        <pre id='itrace'></pre>
+        <script>
+          const t = document.getElementById('itrace');
+          document.getElementById('inner').addEventListener('click', () => {
+            t.textContent += JSON.stringify({ target: 'inner', type: 'click' }) + String.fromCharCode(10);
+          });
+        </script>
+      </body></html>"
+    ></iframe>
+    <input id="range" type="range" min="0" max="100" value="50" aria-label="Zoom" />
+
+    <!--
+      The trace lives in the DOM rather than on window: the test harness reads it
+      through page.evaluate, which runs in an isolated world and cannot see
+      JavaScript globals set by this page's own scripts.
+    -->
+    <pre id="trace"></pre>
+
+    <script>
+      const trace = document.getElementById('trace');
+      const record = (entry) => {
+        trace.textContent += JSON.stringify(entry) + '\n';
+      };
+
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      function canvasPoint(event) {
+        const r = canvas.getBoundingClientRect();
+        return {
+          x: Math.round(event.clientX - r.left),
+          y: Math.round(event.clientY - r.top),
+          clientX: Math.round(event.clientX),
+          clientY: Math.round(event.clientY),
+        };
+      }
+
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'click', 'dblclick']) {
+        canvas.addEventListener(type, (event) => {
+          const point = canvasPoint(event);
+          record({
+            target: 'canvas',
+            type,
+            ...point,
+            buttons: event.buttons,
+            shift: event.shiftKey,
+          });
+          if (type === 'pointerdown' || type === 'pointermove') {
+            ctx.fillStyle = '#2a6';
+            ctx.fillRect(point.x - 2, point.y - 2, 4, 4);
+          }
+        });
+      }
+
+      document.getElementById('hover').addEventListener('mouseenter', () => {
+        record({ target: 'hover', type: 'mouseenter' });
+      });
+
+      document.getElementById('dbl').addEventListener('dblclick', () => {
+        record({ target: 'dbl', type: 'dblclick' });
+      });
+
+      const dropTarget = document.getElementById('target');
+      dropTarget.addEventListener('dragover', (event) => event.preventDefault());
+      dropTarget.addEventListener('drop', (event) => {
+        event.preventDefault();
+        record({
+          target: 'drop',
+          type: 'drop',
+          data: event.dataTransfer ? event.dataTransfer.getData('text/plain') : null,
+        });
+      });
+      document.getElementById('source').addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData('text/plain', 'clip-42');
+        record({ target: 'source', type: 'dragstart' });
+      });
+
+      window.addEventListener('keydown', (event) => {
+        record({
+          target: 'key',
+          type: 'keydown',
+          key: event.key,
+          ctrl: event.ctrlKey,
+          shift: event.shiftKey,
+          meta: event.metaKey,
+        });
+      });
+
+      const range = document.getElementById('range');
+      for (const type of ['input', 'change']) {
+        range.addEventListener(type, () => {
+          record({ target: 'range', type, value: range.value });
+        });
+      }
+    </script>
+  </body>
+</html>
