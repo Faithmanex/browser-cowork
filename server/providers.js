@@ -96,13 +96,14 @@ function toOpenAIMessages(system, events, includeReasoning) {
   return messages;
 }
 
-async function callGemini(cfg, { system, events, tools }) {
+async function callGemini(cfg, { system, events, tools, signal }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     cfg.model,
   )}:generateContent`;
 
   const res = await fetch(url, {
     method: 'POST',
+    signal,
     headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
@@ -142,7 +143,7 @@ async function callGemini(cfg, { system, events, tools }) {
   return { text, call, rawParts: parts };
 }
 
-async function callOpenAI(cfg, { system, events, tools }) {
+async function callOpenAI(cfg, { system, events, tools, signal }) {
   const root = (cfg.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
 
   const body = {
@@ -155,9 +156,12 @@ async function callOpenAI(cfg, { system, events, tools }) {
 
   const res = await fetch(`${root}/chat/completions`, {
     method: 'POST',
+    signal,
     headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
     body: JSON.stringify(body),
   }).catch((err) => {
+    // A deliberate abort is not a network failure; let the caller see it.
+    if (err?.name === 'AbortError') throw err;
     // A connect timeout surfaces as "fetch failed", which tells the user
     // nothing. Say which provider and what happened.
     const cause = err?.cause?.code || err?.message || 'network error';

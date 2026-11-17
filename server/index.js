@@ -178,6 +178,9 @@ function corsHeaders(req) {
 }
 
 function send(req, res, status, body) {
+  // The caller may have hung up (Stop aborts the fetch). Writing to a dead
+  // socket throws inside the request handler, so drop the reply instead.
+  if (res.writableEnded || res.destroyed) return;
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -246,6 +249,24 @@ function readImage(body) {
 
 // ------------------------------------------------------------------- routes
 
+/**
+ * A signal that fires when the caller hangs up.
+ *
+ * Stop in the dock aborts the fetch. Without this the server kept calling the
+ * provider for a reply nobody would receive, and that abandoned step wrote to
+ * the conversation *while* the next one did — the interleaving that corrupted
+ * the history. Aborting here means an abandoned step never records anything.
+ */
+function clientGone(req, res) {
+  const ctrl = new AbortController();
+  const abort = () => {
+    if (!res.writableEnded) ctrl.abort();
+  };
+  req.on('aborted', abort);
+  res.on('close', abort);
+  return ctrl.signal;
+}
+
 const ROUTES = {
   'GET /api/health': async (req, res) => {
     send(req, res, 200, {
@@ -268,6 +289,7 @@ const ROUTES = {
       message: String(body.message || '').slice(0, 4000),
       observation: body.observation,
       image: readImage(body),
+      signal: clientGone(req, res),
     });
     send(req, res, 200, result);
   },
@@ -281,6 +303,7 @@ const ROUTES = {
       message: String(body.message || '').slice(0, 4000),
       observation: body.observation,
       image: readImage(body),
+      signal: clientGone(req, res),
     });
     send(req, res, 200, result);
   },
@@ -299,6 +322,7 @@ const ROUTES = {
       actionResult: body.actionResult,
       observation: body.observation,
       image: readImage(body),
+      signal: clientGone(req, res),
     });
     send(req, res, 200, result);
   },
@@ -341,7 +365,11 @@ const server = createServer(async (req, res) => {
   } catch (err) {
     const status = err?.status || 500;
     if (status >= 500) console.error('[copilot]', err);
-    return send(req, res, status, { error: String(err?.message || err) });
+    return send(req, res, status, {
+      error: String(err?.message || err),
+      // A stable discriminator, so a client never has to match on wording.
+      ...(err?.code ? { code: err.code } : {}),
+    });
   }
 });
 

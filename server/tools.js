@@ -4,6 +4,7 @@
 // Key validation is shared with execution (lib/input.js), so the server cannot
 // accept a combo the worker would refuse to send.
 import { parseKeyCombo } from '../lib/input.js';
+import { listSkills } from './skills.js';
 
 export const TOOLS = [
   {
@@ -109,12 +110,18 @@ export const TOOLS = [
   },
   {
     name: 'click_element',
-    description: 'Click an element observed in the current observation, by its ref.',
+    description:
+      'Click an element observed in the current observation, by its ref. If a floating overlay covers it (a HUD, a fixed bar), a real click would hit the overlay; retry with dom:true to dispatch the click straight to the element, or call set_zoom to move the page clear of it.',
     parameters: {
       type: 'object',
       properties: {
         ref: { type: 'string', description: 'Element ref from the current observation, e.g. e12' },
         double: { type: 'boolean', description: 'Double-click instead of a single click.' },
+        dom: {
+          type: 'boolean',
+          description:
+            'Dispatch the click through the DOM instead of a real mouse click, bypassing hit-testing. Use when a floating overlay that is not part of the task covers the target. Do not use it to click through a modal or consent prompt that is waiting for a decision.',
+        },
       },
       required: ['ref'],
     },
@@ -430,7 +437,14 @@ export function validateAction(name, rawArgs, allowed) {
   if (name === 'use_skill' || name === 'read_skill') {
     const skillName = String(args.name || '');
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(skillName)) {
-      return { ok: false, error: 'use_skill needs a skill name, e.g. feather-bet-setup.' };
+      // Name the tool actually called and the skills that exist. The old text
+      // said "use_skill" for read_skill too, which read as a contradiction and
+      // sent the model into a retry loop.
+      const known = listSkills()
+        .map((s) => s.name)
+        .join(', ');
+      const got = skillName ? `"${skillName}" is not a skill name` : 'the name argument is missing';
+      return { ok: false, error: `${name}: ${got}. Use one of: ${known || '(none installed)'}.` };
     }
     if (name === 'read_skill' && args.file !== undefined && !/^references\/[a-z0-9-]+\.md$/.test(String(args.file))) {
       return { ok: false, error: 'read_skill file must look like references/app.md.' };

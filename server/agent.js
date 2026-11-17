@@ -35,6 +35,8 @@ Rules
 - One action per step. Read the observation that comes back before choosing the next action.
 - Click what a human would click. Prefer a ref; use click_at only when there is no element to address (canvas, frame contents, an unlabelled control).
 - If a needed element is missing from the diff, call find_on_page before inspect_page or scroll_page. Do not guess a ref or selector.
+- If a click is refused because something covers the target, do not click the blocker. When the blocker is a floating overlay that belongs to the app (a HUD, a fixed bar), either call set_zoom to move the page clear of it or retry the click with dom:true, which dispatches straight to the element. When it is a dialog or consent prompt, deal with that first.
+- MATCH on an observation names the fixture the page is on, when the site exposes it. Use it to tell one panel's game from another's rather than comparing page text.
 - When an observation already carries a screenshot, you can see it. Do not call capture_screenshot again for that same view.
 - If the same action produces the same result twice, stop repeating it and explain the obstacle.
 - Call finish_task only when the page itself shows the requested outcome. A click is not evidence; the resulting state is.
@@ -58,7 +60,9 @@ The app
 - Every panel is its own WebView2 view with its own profile and login. They do not share cookies. "Tab" and "panel" mean the same thing.
 - Accounts are the profiles listed on the ACCOUNTS line; a panel belongs to one (or to none, if it was opened from a URL).
 - On SportyBet pages an extension injects a HUD called "SB FAST BET" directly into the page. It is ordinary DOM to you: it binds a market, picks Home or Away, holds the stake, and has auto-place / auto-rebet toggles. Find its controls with find_on_page rather than assuming selectors.
-- Betano panels relay goal signals to the SportyBet panels. "Watch the same game" means pointing the Betano panel at the same fixture as the SportyBet panel.
+- That HUD floats over the page and sometimes covers a page control. When a click is refused as covered and the blocker is the HUD, use dom:true or set_zoom — never click the HUD's own buttons instead.
+- Betano panels relay goal signals to the SportyBet panels. "Watch the same game" means pointing the Betano panel at the same fixture as the SportyBet panel. Betano is the clock and the goal signal, not a place to stage the bet: the slip goes on SportyBet.
+- Each observation and each survey row carries MATCH when the site names the fixture. That is how you tell which game a panel is on, and whether the Betano view and a SportyBet view agree.
 
 What "set up a game" means — this is the normal job, never ask what it means
 1. Open the fixture in the right panel (navigate, or pick the match on the page).
@@ -74,6 +78,7 @@ Everything else — navigating, opening panels, binding markets, picking sides, 
 
 Judgement
 - "4 games on the Vector account" means four fixtures staged in that account's view(s). Pick sensible fixtures from what is live, state which you chose, and proceed.
+- "Set up 4 live games on SportyBet and Betano" means four staged SportyBet slips — one per SportyBet panel — on live fixtures, with the Betano panel pointed at the fixture the user will play first. Betano is not staked; it is the clock and goal signal. Read MATCH on each panel before deciding which fixtures are already open.
 - A stake is the one thing never to invent. If the user gave none, use the stake already in the HUD if it is set; otherwise ask once, briefly.
 - If the instruction is ambiguous, choose the sensible reading, do the work, and note the assumption in one line. Do not reply with a clarification question unless you truly cannot act.`;
 
@@ -127,37 +132,91 @@ export const dropConversation = (id) => conversations.delete(id);
 export const conversationCount = () => conversations.size;
 
 /**
- * Make the history well-formed before appending a new user turn.
+ * Make the history well-formed.
  *
- * A run can stop (step limit, loop detection, user stop) after the assistant
- * message carrying a tool call was recorded but before its tool result was.
- * DeepSeek rejects the next request in that state: "an assistant message with
- * tool_calls must be followed by tool messages". Any such call is answered here
- * with an honest unknown-result, which is also what the model should assume.
+ * The provider requires every assistant message carrying a tool call to be
+ * followed *immediately* by its matching tool message. A run can break that in
+ * two ways:
+ *
+ *   - it stops after the assistant message was recorded but before the result
+ *     was (user stop, abort, loop detection, finish_task);
+ *   - two runs touch one conversation at once, so a call is appended after its
+ *     own result, or a result arrives for a call that is no longer adjacent.
+ *
+ * The old repair only patched the very last call, so the second shape stayed
+ * broken forever: every later turn re-sent the same invalid history and the
+ * conversation was dead. This walks the whole list and restores the invariant:
+ * an assistant call is always followed by exactly one tool result, and a result
+ * with no adjacent call is dropped.
  */
-export function closeDanglingCall(convo) {
-  const answered = new Set();
-  let lastCall = null;
+export function repairHistory(convo) {
+  const events = convo.events;
+  const out = [];
+  let changed = false;
 
-  for (const ev of convo.events) {
-    if (ev.kind === 'tool' && ev.callId) answered.add(ev.callId);
-    if (ev.kind === 'assistant' && ev.callId) lastCall = ev;
+  for (let i = 0; i < events.length; i += 1) {
+    const ev = events[i];
+
+    if (ev.kind === 'tool') {
+      const prev = out[out.length - 1];
+      const answersPrev = prev && prev.kind === 'assistant' && prev.callId === ev.callId;
+      if (!answersPrev) {
+        changed = true;
+        continue;
+      }
+      out.push(ev);
+      continue;
+    }
+
+    out.push(ev);
+
+    if (ev.kind === 'assistant' && ev.callId) {
+      const next = events[i + 1];
+      if (!(next && next.kind === 'tool' && next.callId === ev.callId)) {
+        out.push({
+          kind: 'tool',
+          callId: ev.callId,
+          name: ev.callName,
+          result: {
+            ok: false,
+            error:
+              'No result was recorded: the previous run stopped before this action completed. ' +
+              'Treat the page state as unknown and look again before acting.',
+          },
+        });
+        changed = true;
+      }
+    }
   }
 
-  if (!lastCall || answered.has(lastCall.callId)) return false;
+  if (changed) convo.events = out;
+  return changed;
+}
 
-  convo.events.push({
-    kind: 'tool',
-    callId: lastCall.callId,
-    name: lastCall.callName,
-    result: {
-      ok: false,
-      error:
-        'No result was recorded: the previous run stopped before this action completed. ' +
-        'Treat the page state as unknown and look again before acting.',
-    },
-  });
-  return true;
+/** Kept for the existing tests and callers; same work, whole-list scope. */
+export const closeDanglingCall = repairHistory;
+
+/**
+ * One conversation, one run at a time.
+ *
+ * The dock aborts its request and immediately sends whatever the user queued.
+ * The server kept computing the aborted step, so two `step()` calls appended to
+ * the same event list concurrently — which is how the history got scrambled in
+ * the first place. Serialising here makes the abort harmless: the queued turn
+ * waits for the abandoned run to finish writing, then repairs and continues.
+ */
+const queues = new WeakMap();
+
+function exclusive(convo, fn) {
+  const prev = queues.get(convo) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  // Keep the chain alive after a rejected run, or one failure wedges the
+  // conversation for the rest of its life.
+  queues.set(convo, run.then(
+    () => {},
+    () => {},
+  ));
+  return run;
 }
 
 /**
@@ -170,20 +229,22 @@ export function closeDanglingCall(convo) {
  */
 export async function say(cfg, id, payload) {
   const convo = conversations.get(id);
-  if (!convo) throw Object.assign(new Error('Unknown conversation'), { status: 404 });
+  if (!convo) throw Object.assign(new Error('Unknown conversation'), { status: 404, code: 'unknown_conversation' });
 
-  closeDanglingCall(convo);
-  convo.pendingCallId = null;
-  convo.pendingAction = null;
+  return exclusive(convo, async () => {
+    repairHistory(convo);
+    convo.pendingCallId = null;
+    convo.pendingAction = null;
 
-  // A new instruction gets a fresh step budget, but keeps the whole history:
-  // the model should know what it was doing when the last run stopped.
-  convo.steps = 0;
-  convo.repeats = 0;
-  convo.invalidRetries = 0;
-  convo.lastSignature = '';
+    // A new instruction gets a fresh step budget, but keeps the whole history:
+    // the model should know what it was doing when the last run stopped.
+    convo.steps = 0;
+    convo.repeats = 0;
+    convo.invalidRetries = 0;
+    convo.lastSignature = '';
 
-  return step(cfg, id, payload);
+    return advance(cfg, convo, payload);
+  });
 }
 export const describe = () => ({
   tools: toolNames('chrome'),
@@ -197,14 +258,23 @@ const wrap = (text, hasImage = false) =>
     hasImage ? '\n\nA screenshot of the visible tab is attached to this message. You can see it.' : ''
   }\n</observation>`;
 
+export async function step(cfg, id, payload) {
+  const convo = conversations.get(id);
+  if (!convo) throw Object.assign(new Error('Unknown conversation'), { status: 404, code: 'unknown_conversation' });
+
+  return exclusive(convo, () => advance(cfg, convo, payload));
+}
+
 /**
- * Advance one step.
+ * The body of one step, run under the conversation lock.
  *   first call : { message, observation }
  *   later calls: { actionResult, observation }
  */
-export async function step(cfg, id, payload) {
-  const convo = conversations.get(id);
-  if (!convo) throw Object.assign(new Error('Unknown conversation'), { status: 404 });
+async function advance(cfg, convo, payload) {
+  // The result for the outstanding call is appended a few lines below. Repairing
+  // first would fabricate a second result for the same call and the provider
+  // would reject the history — so only repair when nothing is pending.
+  if (!convo.pendingCallId) repairHistory(convo);
 
   if (convo.steps === 0) {
     convo.events.push({
@@ -249,7 +319,15 @@ export async function step(cfg, id, payload) {
     system,
     events: convo.events,
     tools,
+    signal: payload.signal,
   });
+
+  // The caller went away (Stop, or a closed dock). Record nothing: a step that
+  // nobody received must not leave a call in the history. `complete` rejects on
+  // abort, and this covers the case where it resolved first.
+  if (payload.signal?.aborted) {
+    throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
+  }
 
   convo.steps += 1;
 
@@ -267,7 +345,7 @@ export async function step(cfg, id, payload) {
 
   if (!reply.call) {
     return {
-      conversationId: id,
+      conversationId: convo.id,
       step: convo.steps,
       text: reply.text,
       action: null,
@@ -294,7 +372,7 @@ export async function step(cfg, id, payload) {
 
     if (convo.invalidRetries > MAX_INVALID_RETRIES) {
       return {
-        conversationId: id,
+        conversationId: convo.id,
         step: convo.steps,
         text: reply.text,
         action: null,
@@ -306,7 +384,7 @@ export async function step(cfg, id, payload) {
 
     // Come straight back for a corrected proposal; nothing was executed.
     return {
-      conversationId: id,
+      conversationId: convo.id,
       step: convo.steps,
       text: reply.text,
       action: null,
@@ -321,7 +399,7 @@ export async function step(cfg, id, payload) {
 
   if (action.name === 'finish_task') {
     return {
-      conversationId: id,
+      conversationId: convo.id,
       step: convo.steps,
       text: reply.text || action.args.summary,
       action,
@@ -337,7 +415,7 @@ export async function step(cfg, id, payload) {
 
   if (convo.repeats >= REPEAT_LIMIT) {
     return {
-      conversationId: id,
+      conversationId: convo.id,
       step: convo.steps,
       text: reply.text,
       action: null,
@@ -351,7 +429,7 @@ export async function step(cfg, id, payload) {
   convo.pendingAction = action.name;
 
   return {
-    conversationId: id,
+    conversationId: convo.id,
     step: convo.steps,
     text: reply.text,
     action,

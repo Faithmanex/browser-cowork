@@ -13,6 +13,7 @@ PANELS: 10 "Vector" sportybet (focused) | 5 "Betano" betano
 
 URL: https://www.sportybet.com/ng/m/sport/football/live/…
 TITLE: SportyBet
+MATCH: Tajikistan vs Thailand
 SCROLL: y=0 of 1200 (top, viewport 800)
 VIEWPORT: 1000x800 CSS @1.5x
 INTERACTIVE:
@@ -25,6 +26,10 @@ PAGE TEXT:
 
 - `PANEL` is the view this observation describes. Other panels are reachable by
   passing `panelId`, or by loading them with `read_panel`.
+- `MATCH` is the fixture the page is on, when the site exposes it: two team names
+  in a header. A listing page has no single fixture, so the line is absent there
+  — that is honest, not broken. Use `MATCH` to tell panels apart instead of
+  comparing page text.
 - `VIEWPORT` is CSS pixels. The `@1.5x` is the device ratio: a screenshot pixel
   is that many CSS pixels. `click_at` with `from_image` converts for you.
 - Frames are listed with their size; coordinate tools reach inside them.

@@ -19,7 +19,7 @@ and default to the panel you are looking at. Money-moving app commands
 
 | Tool | Args | Notes |
 |---|---|---|
-| `click_element` | `{ref, double?, panelId?}` | refuses disabled, moving or covered targets |
+| `click_element` | `{ref, double?, dom?, panelId?}` | refuses disabled, moving or covered targets; `dom:true` bypasses the cover |
 | `type_text` | `{ref, text, submit?, clear?, panelId?}` | never on password/secret fields |
 | `select_option` | `{ref, value}` | native `<select>` only |
 | `set_range` | `{ref, value}` | native range input (slider) |

@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { followSkill } from './lib/follow-skill.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = readFileSync(join(HERE, '..', 'server', '.token'), 'utf8').trim();
@@ -40,11 +41,15 @@ const check = (name, cond, detail) => {
 };
 
 async function turn(message) {
-  const reply = await fetch(`${BASE}/api/turn`, {
+  const first = await fetch(`${BASE}/api/turn`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ surface: 'feather', message, observation: OBS }),
   }).then((r) => r.json());
+
+  // Loading the skill first is correct; judge the action after it.
+  const reply = await followSkill(BASE, headers, first, OBS);
+
   if (reply.conversationId) {
     await fetch(`${BASE}/api/conversation/${reply.conversationId}`, { method: 'DELETE', headers }).catch(() => {});
   }

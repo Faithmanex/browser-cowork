@@ -159,7 +159,7 @@ async function waitForLoad(tabId, timeout = 20000) {
 // covered. `rectOf` already waits for motion to settle and reports all three,
 // so the job here is to turn that into a reason the model can act on instead of
 // a silent no-op or a click on the wrong element.
-function blockReason(rect) {
+function blockReason(rect, { dom = false } = {}) {
   const what = rect.label ? `"${rect.label}"` : 'That element';
 
   if (rect.disabled) {
@@ -171,12 +171,15 @@ function blockReason(rect) {
       message: `${what} was still moving (animation or layout shift) after being given time to settle.`,
     };
   }
-  if (rect.covered) {
+  if (rect.covered && !dom) {
     return {
       kind: 'covered',
       // Naming the coverer matters: it is usually the thing the model should be
       // interacting with (a consent banner, a modal) rather than the page under it.
-      message: `${what} is covered by ${rect.covering || 'another element'}; a real click would land on that instead. Dismiss or scroll past the blocker first.`,
+      message:
+        `${what} is covered by ${rect.covering || 'another element'}; a real click would land on that instead. ` +
+        'If the blocker is a floating overlay that is not part of the task (a HUD, a fixed bar), retry with dom:true. ' +
+        'If it is a dialog or consent prompt, dismiss that first.',
     };
   }
   return null;
@@ -227,7 +230,7 @@ const RPC = {
     return { ok: true, count: out.count, matches: out.matches };
   },
 
-  async click_element(tabId, { ref, double = false, observationVersion } = {}) {
+  async click_element(tabId, { ref, double = false, dom = false, observationVersion } = {}) {
     await assertActionable(tabId, 'click_element');
 
     const rect = await execInPage(tabId, 'rectOf', [ref, observationVersion]);
@@ -240,9 +243,17 @@ const RPC = {
     }
     if (rect.missing) return { ok: false, error: `Ref ${ref} is no longer on the page.` };
 
-    const blocked = blockReason(rect);
+    const blocked = blockReason(rect, { dom });
     if (blocked) {
       return { ok: false, blocked: blocked.kind, covering: rect.covering, error: blocked.message };
+    }
+
+    // Straight to the element, past whatever is painted on top of it.
+    if (dom) {
+      const done = await execInPage(tabId, 'clickDom', [ref]);
+      return done
+        ? { ok: true, via: 'dom', clicked: rect.label }
+        : { ok: false, error: `Ref ${ref} could not be clicked through the DOM.` };
     }
 
     try {
