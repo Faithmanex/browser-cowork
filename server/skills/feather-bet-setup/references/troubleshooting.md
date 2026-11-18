@@ -7,7 +7,8 @@
 | `The backend rejected the pairing token` | token mismatch after a restart | ask the user to paste the token the server printed into Settings |
 | `The page agent is not installed in this panel` | the panel is on `about:blank` or an error page | `navigate` it to a real URL, then look again |
 | `panel_summary` says the HUD is missing | the extension had not injected when the page loaded | **`reload_panel` first** — the HUD is injected on load, and a reload fixes it in nearly every case. Only if it is still absent is the page not a SportyBet page |
-| A click is refused as covered and the blocker is the HUD | the HUD floats over the page | `set_zoom {factor: 0.4}` and hide the HUD (`ctrl+shift+f` or its hide control); `dom:true` reaches the element without either |
+| A click is refused as covered and the blocker is the HUD | the HUD floats over the page | drag the HUD by its header (`#sbfb-drag`) to a corner, `set_zoom {factor: 0.4}`, or `dom:true` to dispatch past it |
+| The HUD is over the fixture list and hide puts it back | the overlay is in the way, not the page | drag it to a corner first — that keeps its readouts and stops it eating clicks |
 | `bind_market` says the key is not mounted | markets load on scroll, and late-stage matches drop them | read its `available` list; if the goal market is absent the fixture is too far along — pick another |
 | The wrong market got bound | Pick Market binds the card nearest the click | unbind, then use `bind_market {panelId, marketKey}` |
 | A bind was dropped after it looked successful | the HUD was in ATTACK and its refresh reset the binding | reset with `0`, confirm IDLE, bind again |

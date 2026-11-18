@@ -84,6 +84,11 @@ settings; the agent should not enter credentials or change them.
 - **Pick mode swallows the next click.** While it is active, clicking a market
   tab binds whatever card is under the pointer instead of switching tabs. Enter
   pick mode only after the right tab is showing.
+- A click is refused as covered: when the blocker is the SB Fast Bet HUD, get it
+  out of the way — drag its header (`#sbfb-drag`) to a corner of the panel, or
+  zoom out to 0.4, or dispatch past it with `dom:true`. Dragging keeps the
+  readouts on screen; hiding is for when it is only in the way. Never click the
+  HUD's own buttons to move it.
 - A market that is not mounted logs "market failed to load — scroll to load".
   Scroll that panel; the market exists. Absent altogether is different: a
   late-stage match really has no 1st Goal card.

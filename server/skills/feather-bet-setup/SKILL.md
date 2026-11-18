@@ -25,9 +25,12 @@ defaults, site selectors), load at most one reference, then continue.
 Do these before the first click on any SportyBet panel. Each one cost a session
 to discover, and skipping them costs the same again:
 
-- **Zoom 0.4, then hide the HUD.** At 1:1 in a narrow panel the HUD covers the
-  fixture list and every market row, so every real click is refused as covered.
-  `set_zoom {factor: 0.4}`, then the HUD's hide control (or `ctrl+shift+f`).
+- **Zoom 0.4, hide the HUD, or drag it aside.** At 1:1 in a narrow panel the HUD
+  covers the fixture list and every market row, so every real click is refused as
+  covered. Three ways out, cheapest first: drag the HUD by its header
+  (`#sbfb-drag`) to a corner of the panel, `set_zoom {factor: 0.4}`, or hide it
+  (`ctrl+shift+f`). Dragging keeps the readouts visible, which is usually what
+  you want while working; hiding is for when it is only in the way.
 - **Navigate by search, never by URL you remember.** SportyBet match URLs carry
   per-match ids and a guessed one 404s into the footer. Open `/ng/m/search`,
   type the team, **then send Enter as its own action** — `type_text` with
@@ -96,9 +99,9 @@ stake, arranging, zooming, changing deck settings — is ordinary work.
 - "Betano sync connected: <fixture>" in the HUD log is not a bound market. The
   bound state is the `Bound` readout, or `panel_summary`.
 - The SB Fast Bet HUD floats over the page and can cover a page control. When a
-  click is refused as covered, use `dom:true` (a DOM click ignores the overlay)
-  or `set_zoom` to make room — never click the HUD's own buttons to get it out of
-  the way.
+  click is refused as covered: drag the HUD by its header (`#sbfb-drag`) out of
+  the way, `set_zoom` to 0.4, or use `dom:true`. Never click the HUD's own
+  buttons to get it out of the way.
 - Each observation and survey row carries `MATCH` when the site names the
   fixture. Use it instead of guessing which game a panel is on, and check that
   the Betano view and the SportyBet view agree before trusting a goal signal.

@@ -38,7 +38,7 @@ land on the card nearest the pointer. Always check the returned `marketKey`: an
 
 | Tool | Args | Notes |
 |---|---|---|
-| `click_element` | `{ref, double?, dom?, panelId?}` | refuses disabled, moving or covered targets; `dom:true` bypasses the cover |
+| `click_element` | `{ref, double?, dom?, panelId?}` | refuses disabled, moving or covered targets; a covered click is fixed by dragging the overlay aside, zooming out, or `dom:true` |
 | `type_text` | `{ref, text, submit?, clear?, panelId?}` | never on password/secret fields |
 | `select_option` | `{ref, value}` | native `<select>` only |
 | `set_range` | `{ref, value}` | native range input (slider) |
