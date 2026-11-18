@@ -38,12 +38,12 @@ land on the card nearest the pointer. Always check the returned `marketKey`: an
 
 | Tool | Args | Notes |
 |---|---|---|
-| `click_element` | `{ref, double?, dom?, panelId?}` | refuses disabled, moving or covered targets; a covered click is fixed by dragging the overlay aside, zooming out, or `dom:true` |
-| `type_text` | `{ref, text, submit?, clear?, panelId?}` | never on password/secret fields |
+| `click_element` | `{ref, double?, real?, panelId?}` | dispatches to the element (DOM click) by default, so overlays and re-renders cannot steal it; `real:true` asks for a coordinate click and is refused when the target is covered |
+| `type_text` | `{ref, text, submit?, clear?, panelId?}` | focuses the element rather than clicking it; never on password/secret fields |
 | `select_option` | `{ref, value}` | native `<select>` only |
 | `set_range` | `{ref, value}` | native range input (slider) |
 | `hover` | `{ref?, x?, y?}` | one pointer move, opens hover menus |
-| `click_at` | `{x, y, from_image?, double?, keys?}` | canvas/frames; `from_image` divides by DPR |
+| `click_at` | `{x, y, from_image?, double?, keys?}` | canvas/frames, and elements with no ref; `from_image` divides by DPR |
 | `drag` | `{from_ref?/from_x,from_y?, to_ref?/to_x,to_y?, steps?, keys?}` | press → interpolated moves → release |
 | `scroll_page` | `{dy?, dx?, x?, y?}` | wheel at a point; sync scroll affects all panels |
 | `press_key` | `{keys}` | chords: `ctrl+z`, `shift+Tab`, `space` |

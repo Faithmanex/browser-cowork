@@ -111,16 +111,21 @@ export const TOOLS = [
   {
     name: 'click_element',
     description:
-      'Click an element observed in the current observation, by its ref. If a floating overlay covers it (a HUD, a fixed bar), a real click would hit the overlay; retry with dom:true to dispatch the click straight to the element, or call set_zoom to move the page clear of it.',
+      'Click an element observed in the current observation, by its ref. Dispatches to the element itself (a DOM click), so an overlay cannot intercept it and a re-rendered row cannot move out from under it — use this for every click on something with a ref. Pass real:true only when the hit-test is the point (checking what a person would actually hit); a real click is refused when the target is covered, and the message says how to clear the blocker.',
     parameters: {
       type: 'object',
       properties: {
         ref: { type: 'string', description: 'Element ref from the current observation, e.g. e12' },
         double: { type: 'boolean', description: 'Double-click instead of a single click.' },
+        real: {
+          type: 'boolean',
+          description:
+            'Coordinate click through the platform input path instead of the DOM. Respects hit-testing, so it is refused when something covers the target. Default false.',
+        },
         dom: {
           type: 'boolean',
           description:
-            'Dispatch the click through the DOM instead of a real mouse click, bypassing hit-testing. Use when a floating overlay that is not part of the task covers the target. Do not use it to click through a modal or consent prompt that is waiting for a decision.',
+            'Deprecated alias: dom:false means the same as real:true. The DOM click is the default; there is no need to pass this.',
         },
       },
       required: ['ref'],

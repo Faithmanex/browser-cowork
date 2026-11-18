@@ -84,7 +84,11 @@ if the HUD is missing entirely.
 | score | `.m-table-cell.score .set-score` (×2) |
 | extra markets on the row | `.m-additional-market-wrapper .m-info-cell` |
 
-`list_live_fixtures` reads exactly this.
+`list_live_fixtures` reads exactly this. The rows are not links: to open one,
+find it in a snapshot and `click_element` its ref. The `x`/`y` it returns are a
+fallback for a coordinate click, and coordinates are what put a session on the
+wrong fixture four times in a row — the row above the one you meant, an expand
+caret, or an odds cell that opens the betslip instead of the match.
 
 ## The betslip
 

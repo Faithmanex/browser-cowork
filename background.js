@@ -178,8 +178,8 @@ function blockReason(rect, { dom = false } = {}) {
       // interacting with (a consent banner, a modal) rather than the page under it.
       message:
         `${what} is covered by ${rect.covering || 'another element'}; a real click would land on that instead. ` +
-        'If the blocker is a floating overlay that is not part of the task (a HUD, a fixed bar), retry with dom:true. ' +
-        'If it is a dialog or consent prompt, dismiss that first.',
+        'Omit real:true to dispatch straight to the element, which is the default. If a coordinate click is what ' +
+        'you want, move the blocker first — or deal with the dialog if that is what it is.',
     };
   }
   return null;
@@ -230,7 +230,7 @@ const RPC = {
     return { ok: true, count: out.count, matches: out.matches };
   },
 
-  async click_element(tabId, { ref, double = false, dom = false, observationVersion } = {}) {
+  async click_element(tabId, { ref, double = false, dom = true, real = false, observationVersion } = {}) {
     await assertActionable(tabId, 'click_element');
 
     const rect = await execInPage(tabId, 'rectOf', [ref, observationVersion]);
@@ -243,16 +243,24 @@ const RPC = {
     }
     if (rect.missing) return { ok: false, error: `Ref ${ref} is no longer on the page.` };
 
-    const blocked = blockReason(rect, { dom });
+    // DOM dispatch is the default: it addresses the element the observation
+    // named, so a re-rendered row or a floating overlay cannot steal the click.
+    const useDom = !real && dom !== false;
+
+    const blocked = blockReason(rect, { dom: useDom });
     if (blocked) {
       return { ok: false, blocked: blocked.kind, covering: rect.covering, error: blocked.message };
     }
 
-    // Straight to the element, past whatever is painted on top of it.
-    if (dom) {
+    if (useDom) {
       const done = await execInPage(tabId, 'clickDom', [ref]);
       return done
-        ? { ok: true, via: 'dom', clicked: rect.label }
+        ? {
+            ok: true,
+            via: 'dom',
+            clicked: rect.label,
+            ...(rect.covered ? { coveredBy: rect.covering || 'another element' } : {}),
+          }
         : { ok: false, error: `Ref ${ref} could not be clicked through the DOM.` };
     }
 
@@ -289,21 +297,30 @@ const RPC = {
       return { ok: false, denied: true, error: 'Refused: that is a password or secret field. The user must fill it.' };
     }
 
-    const blocked = blockReason(rect);
+    // Typing does not hit-test: the caret goes wherever focusRef put it. Only a
+    // disabled or still-moving target is a reason to refuse.
+    const blocked = blockReason(rect, { dom: true });
     if (blocked) {
       return { ok: false, blocked: blocked.kind, covering: rect.covering, error: blocked.message };
     }
 
     try {
       await ensureAttached(tabId);
-      await mouseClick(tabId, rect.x, rect.y, 1);
+      // Focus the element the observation named; a coordinate click into a field
+      // is the same bet as one on a row, and it misses for the same reasons.
+      const focused = await execInPage(tabId, 'focusRef', [ref]).catch(() => null);
+      let via = 'focus';
+      if (!focused || !focused.ok) {
+        await mouseClick(tabId, rect.x, rect.y, 1);
+        via = 'cdp';
+      }
       if (clear) {
         await pressKey(tabId, 'ctrl+a');
         await pressKey(tabId, 'Delete');
       }
       await send(tabId, 'Input.insertText', { text });
       if (submit) await pressKey(tabId, 'Enter');
-      return { ok: true, via: 'cdp', into: rect.label, submitted: Boolean(submit) };
+      return { ok: true, via, into: rect.label, submitted: Boolean(submit) };
     } catch (err) {
       const done = await execInPage(tabId, 'setValue', [ref, text]);
       return done
