@@ -31,7 +31,7 @@ that the user did not ask for.
 |---|---|---|
 | `targetProfit` | 10 | net-profit cap in NGN used to compute the stake |
 | `minStake` / `maxStake` | 10 / 500 | stake bounds; the site's own minimum is 10 |
-| `marketKey` | `market-8` | the Xth-goal market; `marketTitle` is only a label and changes with the score |
+| `marketKey` | `market-8` | the goal market on a live list; a match page re-keys its markets, so read the key instead of trusting this |
 | `confirmAuto` | true | after Place, confirm without a second hotkey |
 | `armOnGoal` | true | arm a side when a goal signal arrives |
 | `armAutoConfirm` | false | confirm automatically on an armed goal (money) |
@@ -75,15 +75,24 @@ settings; the agent should not enter credentials or change them.
 
 ## Gotchas
 
-- **Pick Market binds the nearest visible card, and the Key field can snap back.**
-  Scroll the target market fully into view, bind, then verify Bound/Key says
-  `market-8` before attacking. If it shows something else (e.g. 1X2), reset and
-  retry rather than betting the wrong market.
+- **Prefer `bind_market` to Pick Market.** Pick Market binds the nearest visible
+  card, and the Key field can snap back. `bind_market {panelId, marketKey}`
+  drives the same HUD code without the click, and returns the title it bound —
+  verify that with Bound/Key before attacking.
+- **Reset before binding if the stage is not IDLE.** A keep-alive ATTACK keeps
+  the HUD busy and its refresh clears `bound`; press `0`, confirm IDLE, then bind.
+- **Pick mode swallows the next click.** While it is active, clicking a market
+  tab binds whatever card is under the pointer instead of switching tabs. Enter
+  pick mode only after the right tab is showing.
 - A market that is not mounted logs "market failed to load — scroll to load".
-  Scroll that panel; the market exists.
+  Scroll that panel; the market exists. Absent altogether is different: a
+  late-stage match really has no 1st Goal card.
 - Promo popups and the first-run guide cover the page; close with
   `[data-op=close_guide_button]` before reading anything.
 - HUD state can disagree with the page after navigation. Re-read the HUD after
-  every page load.
+  every page load — or ask `panel_summary`, which reads the HUD's own state.
+- The extension injects the HUD on load. If it is missing, reload the panel
+  before concluding anything.
 - Keep-alive activity makes the page select and reset periodically. A stray
   selection appearing without you is that, not the user.
+- "Betano sync connected: <fixture>" in the log is not a bound market.

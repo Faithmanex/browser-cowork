@@ -1,9 +1,33 @@
 # Reading observations
 
-Every step returns an observation. The first of a task is the whole page; later
-ones are a diff against the same panel's previous observation.
+Every step returns an observation. The first of a task is the whole workspace —
+a `WORKSPACE` block plus a compact block per view. Later ones describe the view
+the action changed, as a diff against that panel's previous observation.
 
-## Header lines
+## The workspace block
+
+```
+WORKSPACE: 3 views. There is no active tab — every page tool takes a panelId.
+ACCOUNTS: 3 "Vector" sportybet | 4 "Betano" betano
+SETTINGS: sync_scroll=on auto_login=on auto_rebet=off …
+PANELS: 10 "Vector" sportybet (focused) | 5 "Betano" betano | 12 "Vector 2" sportybet
+
+#10 "Vector" (sportybet)
+  URL: https://www.sportybet.com/ng/m/sport/football/live/…
+  TITLE: SportyBet
+  MATCH: Tajikistan vs Thailand
+  SCROLL: y=0 of 1200 (top, viewport 800)
+  INTERACTIVE:
+  e12 button "Place Bet"
+#5 "Betano" (betano)
+  …
+```
+
+`(focused)` is where a person is looking, not an instruction: act where the work
+is and pass `panelId` to say so. Per-view blocks stop before `PAGE TEXT:`, since
+the point is to plan across views cheaply — `read_panel` gives one view in full.
+
+## One panel
 
 ```
 PANEL: 10 "Vector" (sportybet)

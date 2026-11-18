@@ -48,7 +48,40 @@ const first = await fetch(`${BASE}/api/turn`, {
 }).then((r) => r.json());
 
 // Loading the skill first is correct; judge the action after it.
-const reply = await followSkill(BASE, headers, first, OBS);
+let reply = await followSkill(BASE, headers, first, OBS);
+
+// Looking before acting is also correct, and the survey it receives is the only
+// thing standing between it and the action. Answer the survey and judge again —
+// the test is that it opens the panel, not that it guesses without looking.
+for (let i = 0; i < 2; i += 1) {
+  const name = reply.action?.name;
+  if (name !== 'survey_panels' && name !== 'read_panel') break;
+
+  const survey = {
+    ok: true,
+    panels: [
+      {
+        panelId: 3,
+        label: 'Vector',
+        site: 'sportybet',
+        url: 'https://www.sportybet.com/ng/m',
+        title: 'SportyBet',
+        match: 'Arsenal vs Chelsea',
+        elements: ['e1 button "Deposit"'],
+      },
+    ],
+  };
+
+  reply = await fetch(`${BASE}/api/step`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      conversationId: reply.conversationId,
+      actionResult: survey,
+      observation: OBS,
+    }),
+  }).then((r) => r.json());
+}
 
 if (reply.conversationId) {
   await fetch(`${BASE}/api/conversation/${reply.conversationId}`, { method: 'DELETE', headers }).catch(() => {});

@@ -226,6 +226,7 @@ const REQUIRED = {
   click_at: ['x', 'y'],
   set_range: ['ref', 'value'],
   read_panel: ['panelId'],
+  bind_market: ['marketKey', 'panelId'],
   finish_task: ['summary', 'outcome'],
 };
 
@@ -313,7 +314,7 @@ export const APP_TOOLS = [
   {
     name: 'survey_panels',
     description:
-      'Compact summary of every open view: id, label, URL, title and its first few elements. Use this to compare tabs without reading each one in full.',
+      'Compact summary of every open view: id, label, site, URL, title, the fixture it is on (MATCH), its HUD stage, whether it is already bound and to what, and its first few elements. Use this to plan across views without reading each one in full.',
     parameters: { type: 'object', properties: {} },
   },
   {
@@ -330,13 +331,49 @@ export const APP_TOOLS = [
     },
   },
   {
+    name: 'panel_summary',
+    description:
+      'One SportyBet panel in one short call: fixture, HUD stage, bound market and its key, home/away odds, stake, slip count, whether a Confirm to Pay sheet is open. Use this instead of reading a whole observation to check whether a panel is bound.',
+    parameters: {
+      type: 'object',
+      properties: { panelId: { type: 'number', description: 'Which view' } },
+    },
+  },
+  {
+    name: 'bind_market',
+    description:
+      'Bind a market on a SportyBet panel by its market key (market-8 is the goal market), through the HUD rather than by clicking a card. Returns what was actually bound, with its odds, or the keys this page does have when the requested one is not mounted. Always verify the returned marketKey before touching sides or stake.',
+    parameters: {
+      type: 'object',
+      properties: {
+        panelId: { type: 'number', description: 'Which view' },
+        marketKey: { type: 'string', description: 'e.g. market-8' },
+        title: {
+          type: 'string',
+          description:
+            'Optional title to require, e.g. "1st Goal". Use it when a page carries several cards under one key.',
+        },
+      },
+      required: ['marketKey', 'panelId'],
+    },
+  },
+  {
+    name: 'list_live_fixtures',
+    description:
+      'Rows from a live list: home, away, score, clock, period, the extra markets the row offers, and nextGoal. Use it to pick a fixture that can still carry a goal market, instead of reading a screenshot of a collapsed list.',
+    parameters: {
+      type: 'object',
+      properties: { panelId: { type: 'number', description: 'Which view, on a /live or /live_list page' } },
+    },
+  },
+  {
     name: 'set_zoom',
     description:
       'Zoom a view. factor is a multiplier (0.8 makes it smaller); fit:true picks the zoom that makes the page about target CSS pixels wide, which is how to compensate when the dock has narrowed the panels.',
     parameters: {
       type: 'object',
       properties: {
-        panelId: { type: 'number', description: 'Which panel; defaults to the current one' },
+        panelId: { type: 'number', description: 'Which panel; defaults to the view you last worked on' },
         factor: { type: 'number', description: 'Zoom multiplier, 0.25 to 3' },
         fit: { type: 'boolean', description: 'Fit the page to a target CSS width' },
         target: { type: 'number', description: 'CSS pixels to fit when fit is true (default 1000)' },

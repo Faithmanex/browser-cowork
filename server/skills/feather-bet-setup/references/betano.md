@@ -7,6 +7,10 @@ relays those to the SportyBet panels.
 ## What to do with it
 
 - Open `https://www.betano.ng/live/` or a specific live match URL.
+- **One navigate per panel, by URL.** A live match page is
+  `/live/<home-away-slug>/<eventId>/`; the event id is in the live-list row's
+  link. Searching or scrolling to find it costs minutes and lands on the wrong
+  game; the URL is exact.
 - Match the fixture to the SportyBet panel: same teams, same competition, same
   kickoff. If they differ, the relay will fire on the wrong game.
 - Do not place bets on Betano through the agent unless the user explicitly asks;

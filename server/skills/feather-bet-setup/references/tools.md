@@ -1,19 +1,38 @@
 # Tools
 
-Every tool takes a JSON argument object. Page tools accept an optional `panelId`
-and default to the panel you are looking at. Money-moving app commands
-(`place_*`, `cashout`) are deliberately absent.
+Every tool takes a JSON argument object. There is no active tab: page tools take
+a `panelId`, and omitting it means the view you last worked on (or the only one
+open). Money-moving app commands (`place_*`, `cashout`) are deliberately absent.
 
 ## Reading
 
 | Tool | Args | Returns |
 |---|---|---|
 | `inspect_page` | `{panelId?, full?}` | snapshot: url, title, elements with refs, page text |
-| `find_on_page` | `{query, max_results?, panelId?}` | matches from the current snapshot (`/regex/i` allowed) |
-| `survey_panels` | `{}` | one row per panel: id, label, url, title, first elements |
+| `find_on_page` | `{query, max_results?, panelId?}` | matches from the current snapshot (`/regex/i` allowed); each carries `scrollY` and `inViewport` |
+| `survey_panels` | `{}` | one row per panel: id, label, url, title, fixture, first elements |
 | `read_panel` | `{panelId, full?}` | that panel's observation without switching to it |
+| `panel_summary` | `{panelId}` | SportyBet state in one call: fixture, stage, bound market + key, odds, stake, selections, confirm sheet |
+| `list_live_fixtures` | `{panelId}` | rows: home, away, score, clock, period, markets offered, `nextGoal` |
 | `list_accounts` | `{}` | configured accounts: id, label, site, url, enabled |
 | `read_skill` | `{file}` | the text of a skill reference file |
+
+`panel_summary` exists because checking "is this bound?" by reading a whole
+observation per panel was most of a session's token cost. `list_live_fixtures`
+exists because a collapsed live list cannot be read reliably from a screenshot,
+and choosing from it that way staged matches that had already finished.
+
+## Betting
+
+| Tool | Args | Notes |
+|---|---|---|
+| `bind_market` | `{panelId, marketKey, title?}` | binds through the HUD; returns the market actually bound, or the keys the page does have |
+
+`bind_market` is the HUD's own binding path with the click removed, so it cannot
+land on the card nearest the pointer. Always check the returned `marketKey`: an
+`ok:false` reply includes an `available` list, which is the honest answer to
+"what can I bind here instead?".
+
 
 ## Pointing and typing
 

@@ -6,13 +6,20 @@
 | `Cannot reach the backend at http://127.0.0.1:8787` | the local server is not running | tell the user to start it; nothing can work without it |
 | `The backend rejected the pairing token` | token mismatch after a restart | ask the user to paste the token the server printed into Settings |
 | `The page agent is not installed in this panel` | the panel is on `about:blank` or an error page | `navigate` it to a real URL, then look again |
+| `panel_summary` says the HUD is missing | the extension had not injected when the page loaded | **`reload_panel` first** — the HUD is injected on load, and a reload fixes it in nearly every case. Only if it is still absent is the page not a SportyBet page |
+| A click is refused as covered and the blocker is the HUD | the HUD floats over the page | `set_zoom {factor: 0.4}` and hide the HUD (`ctrl+shift+f` or its hide control); `dom:true` reaches the element without either |
+| `bind_market` says the key is not mounted | markets load on scroll, and late-stage matches drop them | read its `available` list; if the goal market is absent the fixture is too far along — pick another |
+| The wrong market got bound | Pick Market binds the card nearest the click | unbind, then use `bind_market {panelId, marketKey}` |
+| A bind was dropped after it looked successful | the HUD was in ATTACK and its refresh reset the binding | reset with `0`, confirm IDLE, bind again |
+| Search did not run after typing | `type_text submit:true` does not fire this site's search | send `Enter` as its own action |
+| A guessed SportyBet match URL landed in the footer | match ids are per fixture | go in by search, or from the live list |
 | `market failed to load — scroll to load` | the market card is not mounted | turn sync scroll off, scroll that panel, re-read |
 | Scrolling one panel moves all of them | sync scroll is on | `set_setting {"key":"syncScroll","value":false}`, and say you did |
 | `That ref is from an older observation` | the page changed, or another panel's ref was used | take a fresh observation of that panel |
 | `Ref eN is no longer on the page` | the element was removed | re-read; do not guess a new ref |
 | A click is refused as covered | an overlay (consent, promo, guide) is on top | close the overlay, or click it if that is the intent |
 | A click is refused as disabled / moving | the control is not actionable yet | wait or re-read; `moving` means an animation has not settled |
-| `No panel is focused` | no panel selected | `open_panel` or pass `panelId` |
+| `No panel is targeted` | a page action named no view and none was used before | pass `panelId`, or `survey_panels` to see them |
 | A panel is blank or stuck | the load failed | `reload_panel`, then `navigate` if it persists |
 | Text in a field did not take | the site uses a custom keypad or a controlled input | use the keypad clicks, or `set_range` for sliders |
 | The bet became a multi-bet | stale picks from an earlier session | clear the slip (`0`/Esc in the HUD, or its clear control) and bind one selection |
