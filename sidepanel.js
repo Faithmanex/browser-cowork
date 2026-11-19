@@ -420,6 +420,20 @@ function renderConnection() {
   }
 }
 
+async function attachTab(tab) {
+  if (!tab || tab.id == null) return false;
+  if (!/^https?:/i.test(tab.url || '')) return false;
+
+  state.tab = { id: tab.id, title: tab.title, url: tab.url };
+  forgetObservation();
+  renderConnection();
+
+  // Warm the page agent so the first observation is not delayed by injection.
+  await observe(true).catch(() => {});
+  renderConnection();
+  return true;
+}
+
 async function connectTab() {
   const tab = await activeTab();
   if (!tab || tab.id == null) return;
@@ -429,13 +443,7 @@ async function connectTab() {
     return;
   }
 
-  state.tab = { id: tab.id, title: tab.title, url: tab.url };
-  forgetObservation();
-  renderConnection();
-
-  // Warm the page agent so the first observation is not delayed by injection.
-  await observe(true).catch(() => {});
-  renderConnection();
+  await attachTab(tab);
 }
 
 async function disconnectTab() {
@@ -590,3 +598,386 @@ async function init() {
 }
 
 init();
+
+/* ------------------------------------------------------------ agent bridge */
+//
+// The panel owns the loop and every tab action. This adapter exposes a small
+// loopback command channel so an external agent on this machine can hand the
+// panel a task, approve consequential actions, stop, and read progress. It
+// deliberately reuses the existing UI paths (submit(), the approval buttons,
+// connectTab()/disconnectTab()) rather than duplicating their logic.
+
+const BRIDGE = {
+  base: 'http://127.0.0.1:8788',
+  token: 'bc-local-bridge-v1',
+  interval: null,
+  panelId: '',
+  label: '',
+};
+
+// One panel per Chrome profile, so a stable per-profile id is enough to tell
+// panels apart. Without it the relay hands every command to whichever panel
+// polls first, and the caller cannot say which profile it meant.
+const PANEL_ID_KEY = 'bcBridgePanelId';
+const PANEL_LABEL_KEY = 'bcBridgePanelLabel';
+
+function initPanelIdentity() {
+  try {
+    let id = localStorage.getItem(PANEL_ID_KEY);
+    if (!id) {
+      id = `panel-${Math.random().toString(36).slice(2, 8)}`;
+      localStorage.setItem(PANEL_ID_KEY, id);
+    }
+    BRIDGE.panelId = id;
+    BRIDGE.label = localStorage.getItem(PANEL_LABEL_KEY) || '';
+  } catch {
+    BRIDGE.panelId = BRIDGE.panelId || `panel-${Math.random().toString(36).slice(2, 8)}`;
+  }
+}
+
+function bridgePanelInfo() {
+  return {
+    id: BRIDGE.panelId,
+    label: BRIDGE.label || null,
+    tab: state.tab ? `${state.tab.title} | ${state.tab.url}` : null,
+  };
+}
+
+function bridgeQuery() {
+  const q = new URLSearchParams({ panel: BRIDGE.panelId });
+  if (BRIDGE.label) q.set('label', BRIDGE.label);
+  if (state.tab) q.set('tab', `${state.tab.title} | ${state.tab.url}`);
+  return q.toString();
+}
+
+function bridgeHeaders() {
+  return { 'content-type': 'application/json', 'x-bridge-token': BRIDGE.token };
+}
+
+function bridgeEmit(type, data = {}) {
+  fetch(`${BRIDGE.base}/event`, {
+    method: 'POST',
+    headers: bridgeHeaders(),
+    body: JSON.stringify({ type, panel: BRIDGE.panelId, ...data }),
+  }).catch(() => {});
+}
+
+async function bridgePostResult(id, result) {
+  try {
+    await fetch(`${BRIDGE.base}/result`, {
+      method: 'POST',
+      headers: bridgeHeaders(),
+      body: JSON.stringify({ id, panel: BRIDGE.panelId, ...result }),
+    });
+  } catch {
+    /* the caller will time out if the relay went away */
+  }
+}
+
+/**
+ * One unresolved action must not wedge the bridge. A tool that is parked on an
+ * approval gate (or on a page that never settles) would otherwise swallow every
+ * later command, because the caller only ever sees a timeout. The underlying
+ * promise keeps running, so a later `approve` still resolves the action.
+ */
+function withTimeout(promise, ms, label) {
+  let timer;
+  const guard = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} still pending after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
+}
+
+function bridgeFeedText() {
+  if (!feed) return '';
+  return [...feed.querySelectorAll('.msg')]
+    .map((el) => {
+      const who = el.querySelector('.who')?.textContent || '';
+      const body = el.querySelector('.body')?.innerText || '';
+      return `${who}: ${body}`;
+    })
+    .join('\n')
+    .slice(-8000);
+}
+
+function bridgePendingApproval() {
+  const el = feed?.querySelector('.approval');
+  if (!el) return null;
+  return {
+    reason: el.querySelector('.a-body')?.innerText || '',
+    text: el.querySelector('.a-body')?.textContent || '',
+  };
+}
+
+async function bridgeStatus() {
+  return {
+    panel: bridgePanelInfo(),
+    extensionId: chrome.runtime?.id || null,
+    extensionName: chrome.runtime?.getManifest?.().name || null,
+    connected: Boolean(state.tab),
+    tab: state.tab ? { id: state.tab.id, title: state.tab.title, url: state.tab.url } : null,
+    running: state.running,
+    stop: state.stop,
+    conversationId: state.conversationId,
+    obsMode: state.obsMode,
+    obsReason: state.obsReason,
+    tokenConfigured: Boolean(state.settings.token),
+    backendUrl: state.settings.backendUrl,
+    requireApproval: Boolean(state.settings.requireApproval),
+    pendingApproval: bridgePendingApproval(),
+    feed: bridgeFeedText(),
+  };
+}
+
+async function bridgeHandle(cmd) {
+  const { type } = cmd;
+
+  switch (type) {
+    case 'ping':
+      return { ok: true, pong: true };
+
+    case 'identify':
+      return { ok: true, ...bridgePanelInfo() };
+
+    // Name this panel so the caller can pick it by profile instead of by tab.
+    case 'label': {
+      const label = String(cmd.label || '').trim().slice(0, 60);
+      if (!label) return { ok: false, error: 'label is required' };
+      BRIDGE.label = label;
+      try {
+        localStorage.setItem(PANEL_LABEL_KEY, label);
+      } catch {
+        /* private/incognito contexts can refuse storage; the id still works */
+      }
+      bridgeEmit('panel_ready', { href: location.href });
+      return { ok: true, ...bridgePanelInfo() };
+    }
+
+    case 'configure': {
+      const s = { ...state.settings };
+      if (typeof cmd.backendUrl === 'string' && cmd.backendUrl.trim()) {
+        s.backendUrl = cmd.backendUrl.trim();
+      }
+      if (typeof cmd.token === 'string') s.token = cmd.token.trim();
+      if (typeof cmd.requireApproval === 'boolean') s.requireApproval = cmd.requireApproval;
+
+      // Go through the form so saveSettings() writes the same shape it always does.
+      $('backendUrl').value = s.backendUrl;
+      $('token').value = s.token;
+      $('requireApproval').checked = s.requireApproval;
+      await saveSettings();
+
+      return {
+        ok: true,
+        settings: {
+          backendUrl: s.backendUrl,
+          tokenConfigured: Boolean(s.token),
+          requireApproval: s.requireApproval,
+        },
+      };
+    }
+
+    case 'connect':
+      await connectTab();
+      return { ok: true, ...(await bridgeStatus()) };
+
+    // Attach a specific tab instead of whatever is active. `connect` can only
+    // adopt the active tab, which is the wrong one whenever the caller is not
+    // the person clicking around the window.
+    case 'use_tab': {
+      const tabs = await chrome.tabs.query({});
+      const byUrl = String(cmd.urlIncludes || '');
+      const tab = cmd.tabId != null
+        ? tabs.find((t) => t.id === Number(cmd.tabId))
+        : byUrl
+          ? tabs.find((t) => (t.url || '').includes(byUrl))
+          : null;
+      if (!tab) {
+        return {
+          ok: false,
+          error: byUrl ? `no tab matching "${byUrl}"` : 'tabId or urlIncludes is required',
+          openTabs: tabs.map((t) => t.url).filter(Boolean),
+        };
+      }
+      await chrome.tabs.update(tab.id, { active: true });
+      try {
+        await chrome.windows.update(tab.windowId, { focused: true });
+      } catch {
+        /* a background window cannot always be focused */
+      }
+      const attached = await attachTab(tab);
+      return { ok: attached, ...(await bridgeStatus()) };
+    }
+
+    case 'disconnect':
+      await disconnectTab();
+      return { ok: true, connected: false };
+
+    case 'task': {
+      const text = String(cmd.text || '').slice(0, 4000);
+      if (!text) return { ok: false, error: 'text is required' };
+      if (!state.tab) return { ok: false, error: 'No tab connected' };
+      if (!state.settings.token) return { ok: false, error: 'Pairing token not configured' };
+      if (state.running) return { ok: false, error: 'A task is already running' };
+
+      input.value = text;
+      submit();
+      return { ok: true, started: true, text };
+    }
+
+    case 'approve': {
+      const el = feed?.querySelector('.approval');
+      if (!el) return { ok: false, error: 'No approval pending' };
+      const btn = cmd.ok === false ? el.querySelector('.no') : el.querySelector('.ok');
+      if (!btn) return { ok: false, error: 'Approval button missing' };
+      btn.click();
+      return { ok: true, approved: cmd.ok !== false };
+    }
+
+    case 'stop': {
+      if (!state.running) return { ok: false, error: 'No task running' };
+      $('btnStop').click();
+      return { ok: true, stopped: true };
+    }
+
+    // Manual pilot mode: an external agent reads the observation and chooses
+    // actions itself, bypassing the model backend (e.g. when it is out of
+    // credit). Approval and the action guards in executeAction still apply.
+    case 'observe': {
+      const text = await observe(cmd.full !== false);
+      return {
+        ok: true,
+        observation: text,
+        version: state.obsVersion,
+        mode: state.obsMode,
+        reason: state.obsReason,
+      };
+    }
+
+    case 'execute': {
+      const name = String(cmd.name || '');
+      if (!name) return { ok: false, error: 'name is required' };
+      try {
+        // A tool parked on an approval gate returns a timeout to the caller but
+        // keeps waiting internally, so `approve` can still resolve it.
+        const result = await withTimeout(
+          executeAction({ name, args: cmd.args || {} }),
+          45000,
+          `tool "${name}"`,
+        );
+        return { ok: true, result };
+      } catch (err) {
+        return { ok: false, error: err?.message || String(err), pending: true };
+      }
+    }
+
+    case 'screenshot': {
+      const out = await rpc('capture_screenshot', {});
+      return { ok: true, dataUrl: out.dataUrl || '', viewport: out.viewport || null, via: out.via || null };
+    }
+
+    case 'tabs': {
+      const tabs = await chrome.tabs.query({});
+      return {
+        ok: true,
+        tabs: tabs.map((t) => ({
+          id: t.id,
+          windowId: t.windowId,
+          active: Boolean(t.active),
+          title: t.title || '',
+          url: t.url || '',
+        })),
+      };
+    }
+
+    case 'status':
+      return { ok: true, ...(await bridgeStatus()) };
+
+    default:
+      return { ok: false, error: `Unknown command type: ${type}` };
+  }
+}
+
+async function bridgePoll() {
+  try {
+    const res = await fetch(`${BRIDGE.base}/cmd?${bridgeQuery()}`, { headers: bridgeHeaders() });
+    if (!res.ok) return;
+    const { cmd } = await res.json();
+    if (!cmd) return;
+
+    // A command addressed to another panel must never be executed here, even if
+    // this panel somehow received it.
+    if (cmd.panel && cmd.panel !== BRIDGE.panelId) return;
+
+    let result;
+    try {
+      result = await bridgeHandle(cmd);
+    } catch (err) {
+      result = { ok: false, error: err?.message || String(err) };
+    }
+    await bridgePostResult(cmd.id, result);
+  } catch {
+    /* relay not running yet — stay quiet and keep polling */
+  }
+}
+
+// Observe the existing UI paths; this is how the external agent sees progress.
+const _addMsg = addMsg;
+addMsg = function (role, text) {
+  bridgeEmit('message', { role, text });
+  return _addMsg(role, text);
+};
+
+const _addToolCard = addToolCard;
+addToolCard = function (name, args) {
+  const card = _addToolCard(name, args);
+  bridgeEmit('tool', { name, args });
+  const done = card.done;
+  const fail = card.fail;
+  card.done = function (...a) {
+    bridgeEmit('tool_done', { name, detail: a[0] });
+    return done.apply(this, a);
+  };
+  card.fail = function (...a) {
+    bridgeEmit('tool_fail', { name, error: a[0] });
+    return fail.apply(this, a);
+  };
+  return card;
+};
+
+const _askApproval = askApproval;
+askApproval = function (reason, call) {
+  bridgeEmit('approval', { reason, call });
+  return _askApproval(reason, call).then((ok) => {
+    bridgeEmit('approval_resolved', { ok });
+    return ok;
+  });
+};
+
+const _runTask = runTask;
+runTask = async function (message) {
+  bridgeEmit('task_start', { text: message });
+  try {
+    return await _runTask(message);
+  } finally {
+    bridgeEmit('task_end', { text: message, status: await bridgeStatus() });
+  }
+};
+
+const _connectTab = connectTab;
+connectTab = async function () {
+  const out = await _connectTab();
+  bridgeEmit('connection', await bridgeStatus());
+  return out;
+};
+
+const _disconnectTab = disconnectTab;
+disconnectTab = async function () {
+  const out = await _disconnectTab();
+  bridgeEmit('connection', await bridgeStatus());
+  return out;
+};
+
+initPanelIdentity();
+BRIDGE.interval = setInterval(bridgePoll, 700);
+bridgeEmit('panel_ready', { href: location.href });

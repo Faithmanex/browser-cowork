@@ -6,6 +6,7 @@ node_modules/
 # the project — .env.example shows the shape.
 server/.env
 server/.token
+server/.bridge-token
 
 .DS_Store
 Thumbs.db
